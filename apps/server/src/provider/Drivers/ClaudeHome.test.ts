@@ -7,6 +7,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 
 import {
+  CLAUDE_REPORTING_DISABLED_ENV,
   makeClaudeCapabilitiesCacheKey,
   makeClaudeContinuationGroupKey,
   makeClaudeEnvironment,
@@ -98,16 +99,19 @@ it.layer(NodeServices.layer)("ClaudeHome", (it) => {
         const instance = [
           { name: "CLAUDE_CODE_ENTRYPOINT", value: "instance", sensitive: false },
           { name: "CLAUDE_EFFORT", value: "low", sensitive: false },
+          { name: "CLAUDE_CODE_ENABLE_TELEMETRY", value: "1", sensitive: false },
         ];
 
         expect(yield* mergeClaudeProcessEnvironment({ homePath }, undefined, host)).toEqual({
           CLAUDE_CODE_ENTRYPOINT: "t3-code",
           KEEP: "1",
+          ...CLAUDE_REPORTING_DISABLED_ENV,
         });
         expect(yield* mergeClaudeProcessEnvironment({ homePath }, instance, host)).toEqual({
           CLAUDE_CODE_ENTRYPOINT: "instance",
           CLAUDE_EFFORT: "low",
           KEEP: "1",
+          ...CLAUDE_REPORTING_DISABLED_ENV,
         });
 
         yield* fileSystem.writeFileString(

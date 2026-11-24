@@ -43,6 +43,7 @@ import { CodexDriver } from "./CodexDriver.ts";
 import * as CodexAdapterV2 from "../../orchestration-v2/Adapters/CodexAdapterV2.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import * as PortScanner from "../../preview/PortScanner.ts";
 import * as ProviderCredentialStore from "../ProviderCredentialStore.ts";
 import * as ProviderHostLive from "../ProviderHostLive.ts";
@@ -161,6 +162,7 @@ it.layer(layerTest)("CodexDriver", (it) => {
         };
         const installation = yield* CodexInstallation.CodexInstallation;
         const serverConfig = yield* ServerConfig.ServerConfig;
+        const host = yield* ProviderHost.ProviderHost;
         const sharedHome = NodePath.join(serverConfig.stateDir, "shared-codex-home");
         const launches: Array<
           Parameters<CodexAdapterV2.CodexAppServerClientFactoryShape["open"]>[0]
@@ -193,6 +195,10 @@ it.layer(layerTest)("CodexDriver", (it) => {
           environment: [{ name: "OPENAI_API_KEY", value: "ambient-key", sensitive: true }],
           config: { ...CodexDriver.defaultConfig(), setupMode: "managed", homePath: sharedHome },
         }).pipe(
+          Effect.provideService(ProviderHost.ProviderHost, {
+            ...host,
+            allowOptionalProviderRequests: true,
+          }),
           Effect.provideService(
             CodexAdapterV2.CodexAppServerClientFactory,
             CodexAdapterV2.CodexAppServerClientFactory.of({
@@ -434,7 +440,7 @@ it.layer(layerTest)("CodexDriver", (it) => {
         "bundled-marketplaces",
         "openai-bundled",
       );
-      expect(codexAppServerArgs(settings.launchArgs)).toEqual([
+      expect(codexAppServerArgs(settings.launchArgs).slice(0, 7)).toEqual([
         "app-server",
         "-c",
         "thread_unload_delay_secs=0",

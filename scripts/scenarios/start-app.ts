@@ -229,6 +229,7 @@ const startApp = Effect.fn("startApp")(function* (input: {
       CI: "1",
       // Lazily fetched chunks sometimes arrive broken on pool devices.
       EXPO_NO_METRO_LAZY: "1",
+      EXPO_NO_TELEMETRY: "1",
       REACT_NATIVE_PACKAGER_HOSTNAME: host,
     },
     onLine: Console.log,

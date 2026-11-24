@@ -37,7 +37,9 @@ export const relayLayer = (
       // Desktop shell discovery updates this record in place, so it is reread per span.
       const environment = yield* HostProcess.Environment;
       return RelayTracing.layer(
-        ManagedPolicy.deniedBy(policy, "telemetry") === undefined ? tracingConfig : null,
+        policy.connectDisabled === true || ManagedPolicy.deniedBy(policy, "telemetry") !== undefined
+          ? null
+          : tracingConfig,
         // Never the operator's own `service.instance.id`: it names their machine for their receiver.
         { ...resource, serviceInstanceId: processServiceInstanceId() },
         { isEnabled: () => allowedFor(environment, undefined) },

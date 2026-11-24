@@ -1,5 +1,4 @@
 import type { EnvironmentId } from "@t3tools/contracts";
-import Constants from "expo-constants";
 
 import { authClientMetadata } from "../../lib/authClientMetadata";
 import { serverEnvironment } from "../../state/server";
@@ -14,6 +13,6 @@ export function usePrepareTriage() {
   return (environmentId: EnvironmentId) =>
     prepare({
       environmentId,
-      input: { client: authClientMetadata(Constants.expoConfig?.version) },
+      input: { client: authClientMetadata() },
     });
 }

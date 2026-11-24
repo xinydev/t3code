@@ -474,6 +474,7 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
   const idAllocator = yield* IdAllocator.IdAllocatorV2;
   const host = yield* ProviderHost.ProviderHost;
   const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
+  const t3IntegrationsEnabled = host.t3ProviderIntegrationsEnabled?.(PI_PROVIDER) !== false;
   const { continuationRequests } = options;
 
   const protocolError = (detail: string, payload?: unknown) =>
@@ -497,7 +498,9 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
     ) {
       const scope = yield* Effect.scope;
       const cwd = input.runtimePolicy.cwd ?? host.paths.cwd;
-      const mcpSession = yield* mcpSessions.read(input.threadId);
+      const mcpSession = t3IntegrationsEnabled
+        ? yield* mcpSessions.read(input.threadId)
+        : undefined;
       const provideCacheFs = <A, E>(effect: Effect.Effect<A, E, FileSystem.FileSystem>) =>
         effect.pipe(
           Effect.provideService(FileSystem.FileSystem, fileSystem),
@@ -3539,7 +3542,6 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
               );
             }
             // Resolve attachments before turn installation so failures cannot strand activeTurn.
-            // Inject instructions through before_agent_start; wrapping user text breaks slash-command expansion.
             const compactCommand = continuation
               ? null
               : parsePiCompactCommand(turnInput.message.text);

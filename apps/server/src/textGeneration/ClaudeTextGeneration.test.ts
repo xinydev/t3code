@@ -11,6 +11,7 @@ import * as Schema from "effect/Schema";
 import { expect } from "vite-plus/test";
 
 import * as ServerConfig from "../config.ts";
+import { CLAUDE_REPORTING_DISABLED_ENV } from "../provider/Drivers/ClaudeHome.ts";
 import { processProbeSource } from "../testUtils/processProbe.ts";
 import {
   SYNTHETIC_CLAUDE_CAPABLE_MODEL,
@@ -164,7 +165,7 @@ it.layer(layerClaudeTextGenerationTest)("ClaudeTextGeneration", (it) => {
           }),
       );
       expect(JSON.parse(yield* fs.readFileString(settingsLog))).toEqual({
-        env: { ORIGIN: "project" },
+        env: { ORIGIN: "project", ...CLAUDE_REPORTING_DISABLED_ENV },
         disableAllHooks: true,
       });
     }),
@@ -186,7 +187,7 @@ it.layer(layerClaudeTextGenerationTest)("ClaudeTextGeneration", (it) => {
       );
       const settingsLog = path.join(root, "settings.json");
       const launchSettings = JSON.stringify({
-        env: { SHARED: "launch" },
+        env: { SHARED: "launch", CLAUDE_CODE_ENABLE_TELEMETRY: "1" },
         permissions: { allow: ["Bash(npm test:*)"], deny: ["Read(./keys/**)"] },
       });
       yield* withFakeClaudeEnv(
@@ -207,7 +208,7 @@ it.layer(layerClaudeTextGenerationTest)("ClaudeTextGeneration", (it) => {
           }),
       );
       expect(JSON.parse(yield* fs.readFileString(settingsLog))).toEqual({
-        env: { ENDPOINT: "user", SHARED: "launch" },
+        env: { ENDPOINT: "user", SHARED: "launch", ...CLAUDE_REPORTING_DISABLED_ENV },
         permissions: { deny: ["Read(./private/**)", "Read(./keys/**)"] },
         disableAllHooks: true,
       });
@@ -225,7 +226,7 @@ it.layer(layerClaudeTextGenerationTest)("ClaudeTextGeneration", (it) => {
               body: "Body",
             },
           }),
-          argsMustContain: `--model ${SYNTHETIC_CLAUDE_CAPABLE_MODEL}[expanded] --effort max --settings {"disableAllHooks":true,"fastMode":true}`,
+          argsMustContain: `--model ${SYNTHETIC_CLAUDE_CAPABLE_MODEL}[expanded] --effort max --settings {"disableAllHooks":true,"fastMode":true,"env":`,
           claudeConfig: { customModels: [SYNTHETIC_CLAUDE_COLLIDING_ALIAS] },
         },
         (textGeneration) =>
@@ -444,7 +445,7 @@ it.layer(layerClaudeTextGenerationTest)("ClaudeTextGeneration", (it) => {
             title: "Use instance settings",
           },
         }),
-        argsMustContain: `"env":{"ANTHROPIC_VERTEX_PROJECT_ID":"vertex-project-a"}`,
+        argsMustContain: `"env":{"ANTHROPIC_VERTEX_PROJECT_ID":"vertex-project-a",`,
         claudeConfig: {
           launchArgs: `--settings '{"env":{"ANTHROPIC_VERTEX_PROJECT_ID":"vertex-project-a"}}'`,
         },

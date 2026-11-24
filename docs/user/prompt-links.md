@@ -4,11 +4,9 @@ A prompt link opens T3 Code with a prefilled draft—useful for sharing prompts 
 
 Links **never** auto-send or change your permission mode, branch, or worktree. They only open a draft for you to review and send.
 
-## Create a link
+## Link format
 
-- **From the composer**: Open the command palette and choose **Copy prompt link** (or **Copy prompt link with repo and model** on GitHub projects).
-- **From a sent message**: Click **Copy prompt link**.
-- **By hand** (URL-encode the prompt, e.g. with `encodeURIComponent`):
+This build opens existing prompt links. They use these formats.
 
 ```text
 https://app.t3.codes/new?prompt=Rate%20my%20swearing
@@ -36,6 +34,7 @@ Opening a link on `app.t3.codes` asks whether to use the desktop/mobile app, the
 
 T3 Code strips invisible characters (such as zero-width and hidden tag characters) and warns you if a prompt contained them.
 
-## Share a thread
+## Copy a thread reference
 
-**Copy thread** copies a link (`https://app.t3.codes/threads/<environment>/<thread>`) that opens in T3 Code on desktop, web, or mobile and pastes into any composer as a thread chip. Only someone connected to the machine running that thread can view it.
+**Copy thread** copies a `t3-thread://` reference. Paste it into a T3 Code composer to reference the
+thread. Opening the thread requires a connection to the environment that runs it.

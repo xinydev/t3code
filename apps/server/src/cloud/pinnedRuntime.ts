@@ -116,6 +116,8 @@ interface PinnedRuntimeInstallInput {
   readonly arch: string;
   readonly httpClient: HttpClient.HttpClient;
   readonly releaseBaseUrl?: string | undefined;
+  /** null allows only a cached runtime, for invocations without a standalone archive. */
+  readonly localRuntimeDirectory?: string | null;
   /** Reuse a cached runtime only while the release source still lists it, as a policy mirror does. */
   readonly requirePublishedRelease?: boolean;
   readonly onProgress?: (progress: PinnedRuntimeProgress) => void;
@@ -398,6 +400,40 @@ const installPinnedRuntime = Effect.fn("cloud.pinned_runtime.ensure_installed")(
     yield* input.validate(paths);
     return paths;
   }
+  const localRuntime = input.localRuntimeDirectory;
+  if (localRuntime === null) {
+    return yield* new PinnedRuntimeInstallError({
+      step: "locating a local standalone runtime (run service install from the extracted t3 archive)",
+    });
+  }
+  const markInstalled = (runtime: PinnedRuntimePaths) =>
+    fs.writeFileString(runtime.sentinelPath, `${input.version}\n`).pipe(
+      Effect.mapError(
+        (cause) => new PinnedRuntimeInstallError({ step: "recording the completed install", cause }),
+      ),
+    );
+  if (localRuntime !== undefined) {
+    yield* fs.access(input.path.join(localRuntime, "client", "index.html")).pipe(
+      Effect.mapError(
+        (cause) => new PinnedRuntimeInstallError({ step: "finding the extracted t3 archive", cause }),
+      ),
+    );
+    if (versionDirExists) {
+      const [source, target] = yield* Effect.all([
+        fs.realPath(localRuntime),
+        fs.realPath(paths.versionDir),
+      ]).pipe(
+        Effect.mapError(
+          (cause) => new PinnedRuntimeInstallError({ step: "locating the pinned runtime", cause }),
+        ),
+      );
+      if (source === target) {
+        yield* input.validate(paths);
+        yield* markInstalled(paths);
+        return paths;
+      }
+    }
+  }
   if (versionDirExists) {
     yield* fs.remove(paths.versionDir, { recursive: true, force: true }).pipe(
       Effect.mapError(
@@ -422,7 +458,7 @@ const installPinnedRuntime = Effect.fn("cloud.pinned_runtime.ensure_installed")(
   );
   // Downloads are buffered in memory and can take hours; staging only once they finish keeps a
   // staging directory's age a sign of abandonment for prunes in other processes.
-  const archive = yield* downloadArchive(input);
+  const archive = localRuntime === undefined ? yield* downloadArchive(input) : null;
   const stagingDir = yield* fs
     .makeTempDirectory({
       directory: versionsDir,
@@ -444,18 +480,34 @@ const installPinnedRuntime = Effect.fn("cloud.pinned_runtime.ensure_installed")(
   };
 
   return yield* Effect.gen(function* () {
-    yield* installFromArchive(input, stagingDir, archive);
+    if (localRuntime !== undefined) {
+      yield* Effect.gen(function* () {
+        yield* fs.copyFile(
+          input.path.join(localRuntime, input.path.basename(paths.entryPath)),
+          stagingPaths.entryPath,
+        );
+        yield* fs.copy(
+          input.path.join(localRuntime, "client"),
+          input.path.join(stagingDir, "client"),
+        );
+        for (const directory of ["lib", "node_modules", "resource-monitor"]) {
+          const source = input.path.join(localRuntime, directory);
+          if (yield* fs.exists(source)) {
+            yield* fs.copy(source, input.path.join(stagingDir, directory));
+          }
+        }
+      }).pipe(
+        Effect.mapError(
+          (cause) => new PinnedRuntimeInstallError({ step: "copying the local t3 archive", cause }),
+        ),
+      );
+    } else if (archive !== null) {
+      yield* installFromArchive(input, stagingDir, archive);
+    }
 
     input.onProgress?.({ stage: "validate" });
     yield* input.validate(stagingPaths);
-    yield* fs
-      .writeFileString(stagingPaths.sentinelPath, `${input.version}\n`)
-      .pipe(
-        Effect.mapError(
-          (cause) =>
-            new PinnedRuntimeInstallError({ step: "recording the completed install", cause }),
-        ),
-      );
+    yield* markInstalled(stagingPaths);
     const published = yield* fs.rename(stagingDir, paths.versionDir).pipe(
       Effect.as(true),
       Effect.catch((cause) =>

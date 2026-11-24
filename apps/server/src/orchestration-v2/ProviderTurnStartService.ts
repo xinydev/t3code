@@ -51,6 +51,10 @@ import {
 } from "../workspace/restoreMissingWorktree.ts";
 import type * as TaskFolders from "../workspace/TaskFolders.ts";
 import * as EventSink from "./EventSink.ts";
+import {
+  AutomaticProviderContext,
+  isAutomaticProviderPrompt,
+} from "../provider/t3ProviderIntegrations.ts";
 import * as ProviderUsageAnalytics from "../telemetry/ProviderUsageAnalytics.ts";
 import * as ContextHandoffService from "./ContextHandoffService.ts";
 import { canForkBusySourceNatively, isActiveRun } from "./CommandPolicy.ts";
@@ -354,6 +358,7 @@ export const layer: Layer.Layer<
   ProviderTurnStartServiceV2,
   Effect.gen(function* () {
     const eventSink = yield* EventSink.EventSinkV2;
+    const automaticContext = yield* AutomaticProviderContext;
     const turnAnalytics = yield* ProviderUsageAnalytics.ProviderTurnAnalytics;
     const contextHandoffService = yield* ContextHandoffService.ContextHandoffServiceV2;
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
@@ -684,7 +689,8 @@ export const layer: Layer.Layer<
           handoff.delivery === undefined &&
           isPendingForRun(handoff, true),
       );
-      const sideChatHandoff = run.freshContext === true ? undefined : carriedSideChatHandoffs[0];
+      const sideChatHandoff =
+        !automaticContext || run.freshContext === true ? undefined : carriedSideChatHandoffs[0];
       const nativeForkTransfer = projection.contextTransfers.find(
         (transfer) =>
           transfer.type === "fork" &&
@@ -770,6 +776,13 @@ export const layer: Layer.Layer<
           });
         },
       );
+      if (!automaticContext && isAutomaticProviderPrompt(providerMessage, resumeSource ?? run)) {
+        return yield* settleStartFailure({
+          signal: "automatic-prompt-disabled",
+          title: "Automatic prompt skipped",
+          error: new Error("Automatic provider prompts are disabled in this build."),
+        });
+      }
       if (
         expandAssistantCitationsForProvider(providerMessage.text).length >
         PROVIDER_SEND_TURN_MAX_INPUT_CHARS
@@ -1199,13 +1212,13 @@ export const layer: Layer.Layer<
       });
       let effectiveHandoffs = handoffs;
       let resumeFellBack = false;
-      const messageText = withMessageSenderNote(
-        providerMessage,
-        projectComposerContextForProvider({
-          text: providerMessage.text,
-          records: providerMessage.context?.records ?? [],
-        }),
-      );
+      const projectedText = projectComposerContextForProvider({
+        text: providerMessage.text,
+        records: providerMessage.context?.records ?? [],
+      });
+      const messageText = automaticContext
+        ? withMessageSenderNote(providerMessage, projectedText)
+        : projectedText;
       const slashCommand = isSlashCommandMessage(providerMessage);
       const goalDriver =
         session.driver === "codex" ||
@@ -1214,28 +1227,35 @@ export const layer: Layer.Layer<
       const goalCommand = goalDriver && parseGoalCommand(providerMessage) !== null;
       // Part of the user text, so every way a turn starts carries it, after the user's own words.
       const userText =
-        run.outputSchema === undefined || goalCommand || isProviderCommand(providerMessage)
+        !automaticContext ||
+        run.outputSchema === undefined ||
+        goalCommand ||
+        isProviderCommand(providerMessage)
           ? messageText
           : `${messageText}\n\n${outputInstructions(run.outputSchema)}`;
       // The provider turn marks cancellation work delivered; restart continuations use their own text or resume natively.
-      const noteContinuation = isRestartNoteContinuation(
-        run,
-        projection.runs,
-        projection.providerTurns,
-        projection.attempts,
-      );
+      const noteContinuation =
+        automaticContext &&
+        isRestartNoteContinuation(
+          run,
+          projection.runs,
+          projection.providerTurns,
+          projection.attempts,
+        );
       let compactionMessageIdSet: ReadonlySet<string> | undefined;
       const compactionMessageIds = () =>
         (compactionMessageIdSet ??= new Set(
           projection.messages.filter(isSlashCommandMessage).map((candidate) => candidate.id),
         ));
-      const restartCancelledWork = pendingRestartCancelledBackgroundWork({
-        runs: projection.runs,
-        providerTurns: projection.providerTurns,
-        compactionMessageIds,
-        run,
-        attempts: projection.attempts,
-      });
+      const restartCancelledWork = automaticContext
+        ? pendingRestartCancelledBackgroundWork({
+            runs: projection.runs,
+            providerTurns: projection.providerTurns,
+            compactionMessageIds,
+            run,
+            attempts: projection.attempts,
+          })
+        : [];
       // The turn start context omits settled tasks, so read them only after a Stop disposed some.
       // A failed read fails the start: a turn that ran without the note would count as telling it.
       const stoppedRunIds = projection.runs
@@ -1246,7 +1266,9 @@ export const layer: Layer.Layer<
         )
         .map((source) => source.id);
       const stoppedTasks =
-        stoppedRunIds.length === 0 || compactionMessageIds().has(run.userMessageId)
+        !automaticContext ||
+        stoppedRunIds.length === 0 ||
+        compactionMessageIds().has(run.userMessageId)
           ? []
           : pendingStoppedDelegatedTasks({
               providerThreadId: run.providerThreadId,
@@ -1430,6 +1452,7 @@ export const layer: Layer.Layer<
       };
       const prepareRetryHandoff = Effect.fn("ProviderTurnStartService.prepareRetryHandoff")(
         function* (context: ReturnType<typeof handoffContextForThread>) {
+          if (!automaticContext) return { handoffs: [], attachments: [] };
           const { missedRunIds, coveredItemIds, missedRuns, acceptedAttempts } = context;
           const missedHistory =
             missedRunIds.size === 0
@@ -1548,6 +1571,7 @@ export const layer: Layer.Layer<
       let resumedRetryHandoff: Effect.Success<ReturnType<typeof prepareRetryHandoff>> | undefined;
       let resumedHandoffContext: ReturnType<typeof handoffContextForThread> | undefined;
       let portableForkFallback: OrchestrationV2ContextHandoff | undefined;
+      let forkedWithoutHistory = false;
       let recoveryTurnItem: OrchestrationV2TurnItem | undefined;
       const loadedProviderThread = yield* Effect.gen(function* () {
         if (nativeForkTransfer !== undefined) {
@@ -1630,15 +1654,36 @@ export const layer: Layer.Layer<
               message: startFailureMessage(forked.failure),
               class: "provider_error",
             }).message;
-            sourceProjection = {
-              ...sourceProjection,
-              ...(yield* projectionStore.getThreadRecords(nativeForkTransfer.sourceThreadId, [
-                "runs",
-                "attempts",
-              ])),
-            };
+            if (automaticContext) {
+              sourceProjection = {
+                ...sourceProjection,
+                ...(yield* projectionStore.getThreadRecords(nativeForkTransfer.sourceThreadId, [
+                  "runs",
+                  "attempts",
+                ])),
+              };
+            }
           }
           const nativeForkFailed = nativeForkFailure !== undefined;
+          if (!automaticContext) {
+            const freshThread = yield* loadFromProvider(
+              session.ensureThread({
+                threadId: projection.thread.id,
+                title: projection.thread.title,
+                modelSelection: run.modelSelection,
+                runtimePolicy: resolvedRuntimePolicy,
+                providerSessionId,
+                existingProviderThread: {
+                  ...providerThread,
+                  nativeThreadRef: null,
+                  forkedFrom: null,
+                },
+                ...(nativeForkFailed ? { forceNewNativeThread: true } : {}),
+              }),
+            );
+            forkedWithoutHistory = freshThread !== undefined;
+            return freshThread;
+          }
           const sourceItems = yield* ContextHandoffService.readForkHistoryItems(
             projectionStore,
             sourceProjection,
@@ -1875,6 +1920,7 @@ export const layer: Layer.Layer<
               }),
         );
         if (resumed._tag === "Success") {
+          if (!automaticContext) return resumed.success;
           const context = handoffContextForThread(resumed.success);
           context.budget = yield* Effect.cached(context.budget);
           resumedHandoffContext = context;
@@ -1976,6 +2022,7 @@ export const layer: Layer.Layer<
           });
           return undefined;
         }
+        if (!automaticContext) return replacement;
         const { handoff, transferId, createdAt } = yield* recoveryHandoff;
         const previousRun = projection.runs.findLast(
           (candidate) =>
@@ -2087,12 +2134,13 @@ export const layer: Layer.Layer<
       } = handoffContext;
       const retryHandoff = resumedRetryHandoff ?? (yield* prepareRetryHandoff(handoffContext));
       const carriesPendingContext =
-        effectiveHandoffs.length > 0 ||
-        retryHandoff.handoffs.length > 0 ||
-        retryHandoff.attachments.length > 0 ||
-        sideChatHandoff !== undefined ||
-        restartNote !== "" ||
-        noteContinuation;
+        automaticContext &&
+        (effectiveHandoffs.length > 0 ||
+          retryHandoff.handoffs.length > 0 ||
+          retryHandoff.attachments.length > 0 ||
+          sideChatHandoff !== undefined ||
+          restartNote !== "" ||
+          noteContinuation);
       // Pending context turns the resume into a prompted turn, which needs no native resume.
       if (
         manualResume &&
@@ -2125,7 +2173,10 @@ export const layer: Layer.Layer<
           portableForkFallback === undefined
             ? providerThread.handoffIds
             : [...providerThread.handoffIds, portableForkFallback.id],
-        forkedFrom: portableForkFallback === undefined ? providerThread.forkedFrom : null,
+        forkedFrom:
+          portableForkFallback === undefined && !forkedWithoutHistory
+            ? providerThread.forkedFrom
+            : null,
         status: "active",
         createdAt: providerThread.createdAt,
         updatedAt: now,
@@ -2191,14 +2242,16 @@ export const layer: Layer.Layer<
                   ...nativeForkTransfer,
                   targetProviderInstanceId: run.providerInstanceId,
                   targetRunId: run.id,
-                  status: "consumed" as const,
-                  resolution: {
-                    strategy: "native_fork" as const,
-                    providerThreadRef: runningProviderThread.nativeThreadRef,
-                  },
+                  status: forkedWithoutHistory ? ("superseded" as const) : ("consumed" as const),
+                  resolution: forkedWithoutHistory
+                    ? null
+                    : {
+                        strategy: "native_fork" as const,
+                        providerThreadRef: runningProviderThread.nativeThreadRef,
+                      },
                   error: null,
                   updatedAt: now,
-                  consumedAt: now,
+                  consumedAt: forkedWithoutHistory ? null : now,
                 },
               },
             ]),
@@ -2290,7 +2343,7 @@ export const layer: Layer.Layer<
       const startWithHandoffs = Effect.fn("ProviderTurnStartService.startWithHandoffs")(
         function* (turnInput: Parameters<typeof session.startTurn>[0], compact = false) {
           const delivery = yield* deliverContextHandoffs({
-            handoffs: [...effectiveHandoffs, ...retryHandoff.handoffs],
+            handoffs: automaticContext ? [...effectiveHandoffs, ...retryHandoff.handoffs] : [],
             deferInline: compact || slashCommand,
             providerThread: runningProviderThread,
             budget,

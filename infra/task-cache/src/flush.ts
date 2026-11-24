@@ -1,3 +1,3 @@
-import { flushTelemetry } from "./telemetry.ts";
+import { TASK_CACHE_TELEMETRY_ENABLED, flushTelemetry } from "./telemetry.ts";
 
-await flushTelemetry();
+if (TASK_CACHE_TELEMETRY_ENABLED) await flushTelemetry();

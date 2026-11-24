@@ -1,41 +1,19 @@
 // @effect-diagnostics nodeBuiltinImport:off - exercises the real native runner and local HTTP collector.
 import * as NodeChildProcess from "node:child_process";
-import * as NodeDiagnosticsChannel from "node:diagnostics_channel";
 import * as NodeFSP from "node:fs/promises";
 import * as NodeHttp from "node:http";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import { expect, it, vi } from "vite-plus/test";
 import startRunHook from "./runHook.ts";
+import { TASK_CACHE_TELEMETRY_ENABLED } from "./telemetry.ts";
 
-it("sends telemetry from a detached flusher that the task runner does not wait for", async () => {
+const testInstaller = it.skipIf(!TASK_CACHE_TELEMETRY_ENABLED);
+
+it("keeps the cache hook silent with an endpoint, credentials, and telemetry requested", async () => {
   const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "task-cache-flusher-"));
-  const reports: string[] = [];
-  let finishReturned!: () => void;
-  const returned = new Promise<void>((resolve) => {
-    finishReturned = resolve;
-  });
-  let disconnected = false;
-  const server = NodeHttp.createServer(async (request, response) => {
-    let body = "";
-    for await (const chunk of request) body += chunk;
-    reports.push(body);
-    await returned;
-    disconnected = response.destroyed;
-    response.writeHead(204).end();
-  });
-  // The hook detaches and unrefs its flusher, so only this channel lets cleanup wait for it.
-  const flushers: Promise<void>[] = [];
-  const onSpawn = (message: unknown) => {
-    const { process: flusher } = message as { process: NodeChildProcess.ChildProcess };
-    flushers.push(new Promise((resolve) => flusher.once("close", () => resolve())));
-  };
-  NodeDiagnosticsChannel.subscribe("child_process", onSpawn);
+  const endpoint = "https://cache.example/projects/test";
   try {
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-    const address = server.address();
-    if (!address || typeof address === "string") throw new Error("Missing HTTP address");
-    const endpoint = `http://127.0.0.1:${address.port}/projects/test`;
     await NodeFSP.writeFile(NodePath.join(root, ".task-cache.json"), JSON.stringify({ endpoint }));
     await NodeFSP.mkdir(NodePath.join(root, ".config/t3-task-cache"), { recursive: true });
     await NodeFSP.writeFile(
@@ -43,10 +21,14 @@ it("sends telemetry from a detached flusher that the task runner does not wait f
       JSON.stringify({ [endpoint]: { name: "maria", token: "secret" } }),
     );
     vi.stubEnv("HOME", root);
-    vi.stubEnv("GITHUB_ACTIONS", undefined);
-    vi.stubEnv("T3_TASK_CACHE_TELEMETRY", undefined);
+    vi.stubEnv("GITHUB_ACTIONS", "true");
+    vi.stubEnv("T3_TASK_CACHE_TELEMETRY", "on");
     vi.stubEnv("VITE_CACHE_PATH", undefined);
+    using request = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(null, { status: 204 }));
     const finish = startRunHook({ root });
+    expect(finish).toBeTypeOf("function");
     const summary = NodePath.join(root, "node_modules/.vite/task-cache/run/last-summary.json");
     await NodeFSP.mkdir(NodePath.dirname(summary), { recursive: true });
     await NodeFSP.writeFile(
@@ -56,29 +38,22 @@ it("sends telemetry from a detached flusher that the task runner does not wait f
       }),
     );
     await finish?.();
-    finishReturned();
-    await Promise.all(flushers);
-    expect(flushers).toHaveLength(1);
-    expect(reports.map((report) => JSON.parse(report).tasks)).toEqual([
-      [{ package: "fixture", task: "build", source: "executed", savedMs: 0 }],
-    ]);
-    expect(disconnected).toBe(false);
+    expect(request).not.toHaveBeenCalled();
+    expect(await NodeFSP.readdir(root)).not.toContain(".cache");
   } finally {
-    finishReturned();
-    await Promise.all(flushers);
-    NodeDiagnosticsChannel.unsubscribe("child_process", onSpawn);
     vi.unstubAllEnvs();
-    await new Promise<void>((resolve, reject) =>
-      server.close((error) => (error ? reject(error) : resolve())),
-    );
     await NodeFSP.rm(root, { recursive: true, force: true });
   }
 });
 
-it("rejects invalid setup credentials before installing anything and never prints the token", async () => {
+it("rejects cache setup before contacting the endpoint or installing anything", async () => {
   const home = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "task-cache-setup-"));
   const token = "private-credential-that-must-not-appear-in-output";
-  const server = NodeHttp.createServer((_request, response) => response.writeHead(401).end());
+  let requests = 0;
+  const server = NodeHttp.createServer((_request, response) => {
+    requests++;
+    response.writeHead(401).end();
+  });
   try {
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const address = server.address();
@@ -109,8 +84,9 @@ it("rejects invalid setup credentials before installing anything and never print
       child.once("close", (code) => resolve({ code, output }));
     });
     expect(result.code).not.toBe(0);
-    expect(result.output).toContain("Credential verification failed (401)");
+    expect(result.output).toContain("The shared task cache installer is disabled");
     expect(result.output).not.toContain(token);
+    expect(requests).toBe(0);
     expect(await NodeFSP.readdir(home)).toEqual([]);
   } finally {
     await new Promise<void>((resolve, reject) =>
@@ -161,7 +137,7 @@ it("does not start telemetry or create local state without cache credentials", a
   }
 });
 
-it("installs without masking .profile and configures CI through bash", async () => {
+testInstaller("installs without masking .profile and configures CI through bash", async () => {
   const home = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "task-cache-login-"));
   const server = NodeHttp.createServer((_request, response) => response.writeHead(204).end());
   const run = (args: string[], env: NodeJS.ProcessEnv) =>
@@ -270,7 +246,7 @@ it("installs without masking .profile and configures CI through bash", async () 
   }
 });
 
-it("does not send an old endpoint's token after changing the URL interactively", async () => {
+testInstaller("keeps the old token private after changing the endpoint", async () => {
   const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "task-cache-endpoint-"));
   const requests: string[] = [];
   const server = NodeHttp.createServer((request, response) => {
@@ -356,7 +332,7 @@ it("does not send an old endpoint's token after changing the URL interactively",
   }
 });
 
-it("rejects non-loopback HTTP before transmitting a setup credential", async () => {
+testInstaller("rejects non-loopback HTTP before transmitting a setup credential", async () => {
   const home = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "task-cache-http-"));
   try {
     const output = await new Promise<string>((resolve) => {

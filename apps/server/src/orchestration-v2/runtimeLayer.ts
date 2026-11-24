@@ -14,6 +14,10 @@ import * as ProviderSessionRuntime from "../persistence/ProviderSessionRuntime.t
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
 import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
 import * as ProviderInstallationGate from "../provider/ProviderInstallationGate.ts";
+import {
+  layerWithoutAutomaticContext,
+  t3ProviderIntegrationsEnabled,
+} from "../provider/t3ProviderIntegrations.ts";
 import * as AgentSessionImporter from "../project/AgentSessionImporter.ts";
 import * as AgentSessionScanner from "../project/AgentSessionScanner.ts";
 import * as ProjectService from "../project/ProjectService.ts";
@@ -150,7 +154,9 @@ const layerCommandOutputHubProvided = CommandOutputHub.layer.pipe(
   Layer.provide(Layer.merge(layerEventSink, ProjectionStore.layer)),
 );
 
-const layerProviderSessionManagerProvided = ProviderSessionManager.layer.pipe(
+const layerProviderSessionManagerProvided = ProviderSessionManager.layerWithOptions({
+  configureMcp: t3ProviderIntegrationsEnabled,
+}).pipe(
   Layer.provide(
     Layer.mergeAll(
       layerCommandOutputHubProvided,
@@ -171,7 +177,7 @@ const layerProviderAuthServiceProvided = ProviderAuthService.layer.pipe(
 const layerRunExecutionServiceProvided = RunExecutionService.layer.pipe(
   Layer.provide(
     Layer.mergeAll(
-      McpAppModelContext.layer,
+      McpAppModelContext.layerEmpty,
       PreviewAgentActivity.layer,
       layerCheckpointServiceProvided,
       layerEventSink,
@@ -184,6 +190,7 @@ const layerRunExecutionServiceProvided = RunExecutionService.layer.pipe(
 );
 
 const layerProviderTurnStartServiceProvided = ProviderTurnStartService.layer.pipe(
+  Layer.provide(layerWithoutAutomaticContext),
   Layer.provide(
     Layer.mergeAll(
       layerContextHandoffServiceProvided,
@@ -202,10 +209,11 @@ const layerProviderTurnStartServiceProvided = ProviderTurnStartService.layer.pip
 );
 
 const layerProviderTurnControlServiceProvided = ProviderTurnControlService.layer.pipe(
+  Layer.provide(layerWithoutAutomaticContext),
   Layer.provide(
     Layer.mergeAll(
       layerEventSink,
-      McpAppModelContext.layer,
+      McpAppModelContext.layerEmpty,
       ProjectionStore.layer,
       layerProviderSessionManagerProvided,
     ),
@@ -244,6 +252,7 @@ const layerRunFinalizationServiceProvided = RunFinalizationService.layer.pipe(
 );
 
 const layerOrchestratorProvided = Orchestrator.layer.pipe(
+  Layer.provide(layerWithoutAutomaticContext),
   Layer.provide(
     Layer.mergeAll(
       layerCheckpointServiceProvided,
@@ -307,6 +316,7 @@ const layerManagedProjectFoldersProvided = ManagedProjectFolders.layer.pipe(
   Layer.provide(layerProjectService),
 );
 const layerThreadLaunchProvided = ThreadLaunchService.layer.pipe(
+  Layer.provide(layerWithoutAutomaticContext),
   Layer.provide(
     Layer.mergeAll(
       layerProjectSetupScriptRunner,
@@ -366,6 +376,7 @@ const layerProviderContinuationWorkerProvided = ProviderContinuationService.laye
   ),
 );
 const layerThreadTitleRegenerationProvided = ThreadTitleRegenerationService.layer.pipe(
+  Layer.provide(layerWithoutAutomaticContext),
   Layer.provide(
     Layer.mergeAll(
       layerThreadManagementProvided,
@@ -408,7 +419,7 @@ const layerProviderRuntimeRecoveryProvided = ProviderRuntimeRecoveryService.laye
 const layerMcpAppRequestsProvided = McpAppRequests.layer.pipe(
   Layer.provide(
     Layer.mergeAll(
-      McpAppModelContext.layer,
+      McpAppModelContext.layerEmpty,
       layerOrchestratorProvided,
       layerThreadManagementProvided,
       layerProviderSessionManagerProvided,

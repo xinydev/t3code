@@ -231,6 +231,7 @@ export const CursorDriver: ProviderDriver<
         ).pipe(
           Effect.filterOrElse(
             (snapshot) =>
+              host.allowOptionalProviderRequests === false ||
               !(
                 effectiveConfig.enabled &&
                 snapshot.installed &&

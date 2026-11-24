@@ -9,6 +9,19 @@ import {
   resolveCodexLaunchArgs,
 } from "./codexLaunchArgs.ts";
 
+const reportingOverrides = [
+  "-c",
+  "analytics.enabled=false",
+  "-c",
+  "feedback.enabled=false",
+  "-c",
+  'otel.exporter="none"',
+  "-c",
+  'otel.trace_exporter="none"',
+  "-c",
+  'otel.metrics_exporter="none"',
+];
+
 describe("codexAppServerArgs", () => {
   it.each([
     {
@@ -40,7 +53,23 @@ describe("codexAppServerArgs", () => {
       "-c",
       "thread_unload_delay_secs=0",
       ...row.expected,
+      ...reportingOverrides,
     ]);
+  });
+
+  it("forces analytics off after launch arguments and before the option terminator", () => {
+    NodeAssert.deepStrictEqual(
+      codexAppServerArgs("--analytics-default-enabled -c analytics.enabled=true --"),
+      [
+        "app-server",
+        "-c",
+        "thread_unload_delay_secs=0",
+        "-c",
+        "analytics.enabled=true",
+        ...reportingOverrides,
+        "--",
+      ],
+    );
   });
 });
 
@@ -48,7 +77,7 @@ describe("codexExecLaunchArgs", () => {
   it("keeps shared codex flags and omits app-server-only flags", () => {
     NodeAssert.deepStrictEqual(
       codexExecLaunchArgs('--strict-config --enable foo --listen off --config model="gpt 5"'),
-      ["--strict-config", "--enable", "foo", "--config", "model=gpt 5"],
+      ["--strict-config", "--enable", "foo", "--config", "model=gpt 5", ...reportingOverrides],
     );
   });
 
@@ -60,6 +89,7 @@ describe("codexExecLaunchArgs", () => {
       "foo",
       "--disable",
       "hooks",
+      ...reportingOverrides,
     ]);
     NodeAssert.deepStrictEqual(codexMcpListLaunchArgs(launchArgs), [
       "--enable",
@@ -72,12 +102,14 @@ describe("codexExecLaunchArgs", () => {
       "foo",
       "--disable",
       "hooks",
+      ...reportingOverrides,
     ]);
   });
 
   it("does not pair value-taking flags with adjacent flags", () => {
     NodeAssert.deepStrictEqual(codexExecLaunchArgs("--config --strict-config --enable --disable"), [
       "--strict-config",
+      ...reportingOverrides,
     ]);
   });
 });
@@ -97,6 +129,7 @@ describe.each(["", "="])("codex exec and mcp list launch args with -p%swork", (s
       "-c=model_provider=ollama",
       "--enable",
       "foo",
+      ...reportingOverrides,
     ]);
   });
 
@@ -108,6 +141,7 @@ describe.each(["", "="])("codex exec and mcp list launch args with -p%swork", (s
       "-c=model_provider=ollama",
       "--enable",
       "foo",
+      ...reportingOverrides,
     ]);
   });
 });

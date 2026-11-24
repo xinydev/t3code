@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./diagnosticCollection": {
+      "types": "./src/diagnosticCollection.ts",
+      "import": "./src/diagnosticCollection.ts"
+    },
     "./png": {
       "types": "./src/png.ts",
       "import": "./src/png.ts"

@@ -246,13 +246,17 @@ describe("CodexAdapterV2 runtime policy", () => {
         folders: [{ name: "api", path: "/work/api", isGitRepository: true }],
         extraRoots: ["/work/api"],
       };
-      const build = (runtimeMode: "approval-required" | "auto-accept-edits" | "full-access") =>
+      const build = (
+        runtimeMode: "approval-required" | "auto-accept-edits" | "full-access",
+        t3IntegrationsEnabled = true,
+      ) =>
         CodexAdapterV2.buildCodexTurnStartParams({
           nativeThreadId: `native-workspace-${runtimeMode}`,
           codexInput: [{ type: "text", text: "test" }],
           runtimePolicy: { runtimeMode, interactionMode: "default", cwd: "/work/app", workspace },
           modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
-          hasT3Mcp: false,
+          t3IntegrationsEnabled,
+          hasT3Mcp: !t3IntegrationsEnabled,
         });
 
       const autoAcceptEdits = yield* build("auto-accept-edits");
@@ -268,6 +272,9 @@ describe("CodexAdapterV2 runtime policy", () => {
         autoAcceptEdits.additionalContext?.["t3_code_workspace"]?.value,
         "- api (Git repository): /work/api",
       );
+      const nativeOnly = yield* build("auto-accept-edits", false);
+      assert.isUndefined(nativeOnly.additionalContext);
+      assert.deepEqual(nativeOnly.sandboxPolicy, autoAcceptEdits.sandboxPolicy);
     }),
   );
 

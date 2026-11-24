@@ -62,8 +62,6 @@ const environment: BootErrorEnvironment = {
   version: "0.1.3-nightly.20261026.3707",
   channel: "nightly",
   surface: "web",
-  platform: "MacIntel",
-  userAgent: "Test",
   time: "2026-10-26T00:00:00.000Z",
 };
 

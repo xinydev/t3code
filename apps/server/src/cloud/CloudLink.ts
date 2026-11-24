@@ -1738,3 +1738,51 @@ const make = Effect.gen(function* () {
 });
 
 export const layer = Layer.effect(CloudLink, make);
+
+export const layerDisabled = Layer.effect(
+  CloudLink,
+  Effect.gen(function* () {
+    const policy = yield* ManagedPolicy.ManagedPolicy;
+    const refused = () => Effect.fail(ManagedLimits.refuseConnect(policy));
+    return CloudLink.of({
+      linkProof: refused,
+      applyRelayConfig: refused,
+      linkState: Effect.fn("CloudLink.linkState")(() =>
+        Effect.succeed({
+          linked: false,
+          cloudUserId: null,
+          relayUrl: null,
+          relayIssuer: null,
+          managedTunnelActive: false,
+          publishAgentActivity: false,
+          linkableHere: false,
+        }),
+      ),
+      unlink: Effect.fn("CloudLink.unlink")(() =>
+        Effect.succeed({
+          ok: true as const,
+          endpointRuntimeStatus: { status: "disabled" as const },
+        }),
+      ),
+      updatePreferences: refused,
+      updateLiveActivityPreference: refused,
+      answerHealthRequest: refused,
+      mintCredential: refused,
+      reconcileDesiredLinkIfStillDesired: Effect.fn("CloudLink.reconcileDesiredLinkIfStillDesired")(
+        () => Effect.succeed(null),
+      ),
+      registerManagedTunnelRecovery: Effect.fn("CloudLink.registerManagedTunnelRecovery")(() =>
+        Effect.succeed({ status: "not_linked" as const }),
+      ),
+      recoverManagedTunnel: Effect.fn("CloudLink.recoverManagedTunnel")(() =>
+        Effect.succeed(false),
+      ),
+      startManagedTunnelIfOriginConfirmed: Effect.fn(
+        "CloudLink.startManagedTunnelIfOriginConfirmed",
+      )(() => Effect.succeed(false)),
+      releaseManagedTunnelOnShutdown: Effect.fn("CloudLink.releaseManagedTunnelOnShutdown")(() =>
+        Effect.succeed(false),
+      ),
+    });
+  }),
+);

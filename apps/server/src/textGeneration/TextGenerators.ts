@@ -192,3 +192,10 @@ export const make = Effect.gen(function* () {
 export const layer = Layer.effect(TextGenerators, make).pipe(
   Layer.provide([SecretResolverLayer.layer, FetchHttpClient.layer]),
 );
+
+export const layerDisabled = Layer.succeed(TextGenerators, {
+  runner: Effect.fn("TextGenerators.runner")(() => Effect.undefined),
+  listModels: Effect.fn("TextGenerators.listModels")(() =>
+    Effect.fail(new TextGeneratorError({ detail: "Direct text generators are disabled." })),
+  ),
+});

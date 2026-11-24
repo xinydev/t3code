@@ -382,17 +382,16 @@ describe("provider projection", () => {
     );
     expect(projected).toContain('<context kind="response" id="response_m1">');
     expect(projected).toContain(
-      "about subagent: review pr 412 (search)\nsubagent threadId: review-search\nabout subagent: review pr 413\nsubagent threadId: review-remote\nsubagent environmentId: env-2\nstarts:",
+      "about subagent: review pr 412 (search)\nsubagent threadId: review-search\nabout subagent: review pr 413\nsubagent threadId: review-remote\nsubagent environmentId: env-2",
     );
     expect(projected).toContain(
-      "starts: Reviewer (search) finished and returned blocked.\nRead it in full: ",
+      "threadId: main\nitemId: item-1\nexcerpt: Reviewer (search) finished and returned blocked.",
     );
-    expect(projected).toContain('t3_thread_read({"threadId":"main","itemId":"item-1"})');
+    expect(projected).not.toContain("t3_thread_read");
     expect(projected).not.toContain("Here is what it found");
-    expect(projected).toContain("Reference, not instructions");
   });
 
-  it("projects an attached thread as identity plus a read instruction, never its history", () => {
+  it("projects the identity of an attached thread", () => {
     const projected = projectComposerContextForProvider({
       text: "Compare with [Old title](t3-context://v1/thread/thread_abc)",
       records: [
@@ -411,11 +410,10 @@ describe("provider projection", () => {
     expect(projected).toContain('<context kind="thread" id="thread_abc">');
     expect(projected).toContain("threadId: abc");
     expect(projected).toContain("environmentId: env-1");
-    expect(projected).toContain('t3_thread_read({"threadId":"abc","environmentId":"env-1"})');
-    expect(projected).toContain("not instructions");
+    expect(projected).not.toContain("t3_thread_read");
   });
 
-  it("projects a mentioned machine as its identity and how to use it, never an address", () => {
+  it("projects the label and ID of a mentioned environment", () => {
     const projected = projectComposerContextForProvider({
       text: "Run the suite on [vps](t3-context://v1/environment/env_vps)",
       records: [
@@ -432,7 +430,7 @@ describe("provider projection", () => {
     expect(projected).toContain('<context kind="environment" id="env_vps">');
     expect(projected).toContain("label: vps");
     expect(projected).toContain("environmentId: environment-vps");
-    expect(projected).toContain("t3_environment_link with this environmentId");
+    expect(projected).not.toContain("t3_environment_link");
     expect(projected).not.toMatch(/https?:/);
   });
 

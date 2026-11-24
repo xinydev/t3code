@@ -8,6 +8,7 @@ import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 import * as NodeReadlinePromises from "node:readline/promises";
 import { patchNativeCli } from "../src/nativeHook.js";
+import { TASK_CACHE_TELEMETRY_ENABLED } from "../src/telemetry.ts";
 
 const home = NodeOS.homedir();
 const root = NodePath.resolve(import.meta.dirname, "../../..");
@@ -63,6 +64,10 @@ if (process.argv.includes("--uninstall")) {
     "Task cache uninstalled. Restart existing shells and agents to clear their inherited preload.",
   );
   process.exit(0);
+}
+
+if (!TASK_CACHE_TELEMETRY_ENABLED) {
+  throw new Error("The shared task cache installer is disabled in this checkout.");
 }
 
 const { endpoint: defaultEndpoint } = JSON.parse(

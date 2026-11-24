@@ -26,7 +26,10 @@ import * as NetService from "@t3tools/shared/Net";
 
 import { loopbackBindAddress } from "../auth/utils.ts";
 
-type PolicyDocument = { readonly document: ManagedPolicyDocument | undefined };
+type PolicyDocument = {
+  readonly document: ManagedPolicyDocument | undefined;
+  readonly connectDisabled?: true;
+};
 
 export class ManagedPolicyRefusedError extends Schema.TaggedError<ManagedPolicyRefusedError>()(
   "ManagedPolicyRefusedError",
@@ -74,7 +77,9 @@ export const allowsRemoteClients = (policy: PolicyDocument) =>
 
 /** T3 Connect is a way for remote clients in, so a policy without `remote` turns it off too. */
 export const allowsConnect = (policy: PolicyDocument) =>
-  policy.document?.limits?.connect !== false && allowsRemoteClients(policy);
+  policy.connectDisabled !== true &&
+  policy.document?.limits?.connect !== false &&
+  allowsRemoteClients(policy);
 
 const refuse = (policy: PolicyDocument, action: string, detail?: string) =>
   new ManagedPolicyRefusedError({

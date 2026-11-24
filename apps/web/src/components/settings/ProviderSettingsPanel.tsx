@@ -580,6 +580,10 @@ export function EnvironmentProviderSettings({
   const gt = useGT();
   const settings = useEnvironmentSettings(environmentId);
   const managedPolicy = useManagedPolicy(environmentId);
+  const supportsTextGenerators = useAtomValue(
+    serverEnvironment.configValueAtom(environmentId),
+    (config) => config?.environment.capabilities.textGenerators !== false,
+  );
   // A policy that allows no provider leaves nothing to add.
   const canAddProvider =
     !readOnly && managedPolicy?.limits?.providers?.allowedDrivers?.length !== 0;
@@ -1155,7 +1159,8 @@ export function EnvironmentProviderSettings({
       />
 
       {/* The server drops text generators under a provider allow-list. */}
-      {managedPolicy?.limits?.providers?.allowedDrivers === undefined ? (
+      {supportsTextGenerators &&
+      managedPolicy?.limits?.providers?.allowedDrivers === undefined ? (
         <TextGeneratorsSettings
           key={`text-generators:${environmentId}`}
           environmentId={environmentId}

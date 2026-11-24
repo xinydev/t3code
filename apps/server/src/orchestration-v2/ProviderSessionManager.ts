@@ -14,6 +14,7 @@ import {
   type OrchestrationV2Run,
   OrchestrationV2RuntimeRequest,
   type OrchestrationV2Subagent,
+  type ProviderDriverKind,
   ProviderInstanceId,
   ProviderSessionId,
   type RunId,
@@ -365,7 +366,7 @@ type ProviderSessionEventSignal =
 export interface ProviderSessionManagerV2LayerOptions {
   readonly idleTimeoutMs?: number;
   readonly maxIdlePinMs?: number;
-  readonly configureMcp?: boolean;
+  readonly configureMcp?: boolean | ((driver: ProviderDriverKind) => boolean);
 }
 
 function releaseStatusFor(
@@ -611,15 +612,26 @@ export const layerWithOptions = (
       const isMcpCredentialReserved = (threadId: ThreadId, mcpCredentialId: string) =>
         (mcpCredentialReservations.get(mcpReservationKey(threadId, mcpCredentialId)) ?? 0) > 0;
       const mcpPrepareLock = yield* KeyedLock.make<ThreadId>();
+      const configureMcp = (driver: ProviderDriverKind) =>
+        typeof options.configureMcp === "function"
+          ? options.configureMcp(driver)
+          : options.configureMcp !== false;
       /** Serialize prepares per thread so concurrent rotations cannot revoke each other's credentials. */
       const prepareMcpSession = (
         threadId: ThreadId,
         providerInstanceId: ProviderInstanceId,
+        driver: ProviderDriverKind,
       ): Effect.Effect<PreparedMcpCredential> =>
-        options.configureMcp === false
-          ? mcpSessions
-              .clear(threadId)
-              .pipe(Effect.as<PreparedMcpCredential>({ mcpCredentialId: undefined, issued: false }))
+        !configureMcp(driver)
+          ? mcpPrepareLock.withLock(
+              threadId,
+              mcpSessionRegistry
+                .revokeThread(threadId)
+                .pipe(
+                  Effect.andThen(mcpSessions.clear(threadId)),
+                  Effect.as<PreparedMcpCredential>({ mcpCredentialId: undefined, issued: false }),
+                ),
+            )
           : mcpPrepareLock.withLock(
               threadId,
               Effect.gen(function* () {
@@ -1944,7 +1956,11 @@ export const layerWithOptions = (
               Effect.uninterruptible,
             );
             if (attached !== undefined) {
-              const prepared = yield* prepareMcpSession(input.threadId, input.providerInstanceId);
+              const prepared = yield* prepareMcpSession(
+                input.threadId,
+                input.providerInstanceId,
+                attached.driver,
+              );
               preparedForCleanup = prepared;
               if (prepared.mcpCredentialId !== undefined) {
                 const mcpCredentialId = prepared.mcpCredentialId;
@@ -2514,6 +2530,15 @@ export const layerWithOptions = (
         },
       );
 
+      const withoutCaptureMetadata = (message: ProviderAdapter.ProviderAdapterV2TurnMessage) => {
+        const attachments = message.attachments.map((attachment) => {
+          if (attachment.type !== "image" || !("source" in attachment)) return attachment;
+          const { source: _source, ...image } = attachment;
+          return image;
+        });
+        return { ...message, attachments };
+      };
+
       const decorateRuntime = (
         runtime: ProviderAdapter.ProviderAdapterV2SessionRuntime,
         eventSubscribers: Ref.Ref<
@@ -2606,8 +2631,11 @@ export const layerWithOptions = (
               ),
             ),
           );
+        const useT3Context = configureMcp(runtime.driver);
+        const { injectHistory, ...nativeRuntime } = runtime;
         return {
-          ...runtime,
+          ...nativeRuntime,
+          ...(useT3Context && injectHistory !== undefined ? { injectHistory } : {}),
           // Pi replaces its session snapshot as metadata changes.
           get providerSession() {
             return runtime.providerSession;
@@ -2739,7 +2767,18 @@ export const layerWithOptions = (
           startTurn: (input) =>
             busyTurn(input, () =>
               agentFeedbackMode.pipe(
-                Effect.flatMap((agentFeedback) => runtime.startTurn({ ...input, agentFeedback })),
+                Effect.flatMap((agentFeedback) => {
+                  if (useT3Context) return runtime.startTurn({ ...input, agentFeedback });
+                  const { appContext: _appContext, inlineContextLength, ...nativeInput } = input;
+                  return runtime.startTurn({
+                    ...nativeInput,
+                    agentFeedback: "off",
+                    message: {
+                      ...withoutCaptureMetadata(input.message),
+                      text: input.message.text.slice(inlineContextLength ?? 0),
+                    },
+                  });
+                }),
                 turnMetrics("send", input.modelSelection.model),
               ),
             ),
@@ -2748,7 +2787,7 @@ export const layerWithOptions = (
             : {
                 resumeTurn: (input: ProviderAdapter.ProviderAdapterV2ResumeTurnInput) =>
                   busyTurn(input, () =>
-                    runtime.resumeTurn!(input).pipe(
+                    runtime.resumeTurn!(useT3Context ? input : { ...input, appContext: [] }).pipe(
                       turnMetrics("resume", input.modelSelection.model),
                     ),
                   ),
@@ -2758,14 +2797,32 @@ export const layerWithOptions = (
             : {
                 compactThread: (input: ProviderAdapter.ProviderAdapterV2TurnInput) =>
                   busyTurn(input, () =>
-                    runtime.compactThread!(input).pipe(
-                      turnMetrics("compact", input.modelSelection.model),
-                    ),
+                    runtime.compactThread!(
+                      useT3Context
+                        ? input
+                        : {
+                            ...input,
+                            appContext: [],
+                            message: withoutCaptureMetadata(input.message),
+                          },
+                    ).pipe(turnMetrics("compact", input.modelSelection.model)),
                   ),
               }),
           steerTurn: (input) =>
             observeActivity(providerSessionId, touchActivity(providerSessionId)).pipe(
-              Effect.andThen(runtime.steerTurn(input).pipe(turnMetrics("steer"))),
+              Effect.andThen(
+                runtime
+                  .steerTurn(
+                    useT3Context
+                      ? input
+                      : {
+                          ...input,
+                          appContext: [],
+                          message: withoutCaptureMetadata(input.message),
+                        },
+                  )
+                  .pipe(turnMetrics("steer")),
+              ),
             ),
           // A provider starved of memory can stop answering, so no caller may wait on it unbounded.
           interruptTurn: (input) =>
@@ -3291,6 +3348,7 @@ export const layerWithOptions = (
               const prepared = yield* prepareMcpSession(
                 input.threadId,
                 input.modelSelection.instanceId,
+                adapter.driver,
               );
               const mcpCredentialId = prepared.mcpCredentialId;
               let reservationDropped = mcpCredentialId === undefined;

@@ -51,9 +51,7 @@ const updateWriter = Effect.fn("TaskCache.manageWriter")(function* (
       ? `Removed ${name} from the local writer registry.`
       : `Private credential written to ${file}.`,
   );
-  yield* Console.log(
-    "Run alchemy deploy --stage prod from infra/task-cache to apply the writer changes.",
-  );
+  yield* Console.log("Run vp run deploy from infra/task-cache to apply the writer changes.");
 });
 
 const command = Command.make("task-cache").pipe(

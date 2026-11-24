@@ -119,7 +119,7 @@ interface RefreshRequest {
   readonly backfill?: boolean;
 }
 
-export const make = Effect.gen(function* () {
+const makeService = Effect.fnUntraced(function* (backgroundChecks: boolean) {
   const orchestrator = yield* Orchestrator.OrchestratorV2;
   const projectStore = yield* ProjectStore.ProjectStoreV2;
   const git = yield* GitManager.GitManager;
@@ -607,6 +607,7 @@ export const make = Effect.gen(function* () {
         Effect.forever,
       ),
     );
+    if (!backgroundChecks) return;
     yield* forkParked(
       Effect.gen(function* () {
         yield* worker.enqueue({ threadId: null, refresh: false, backfill: true });
@@ -624,3 +625,6 @@ export const make = Effect.gen(function* () {
 
   return { start, drain: worker.drain } satisfies ThreadPullRequestServiceV2["Service"];
 });
+
+export const make = makeService(true);
+export const makeEventDriven = makeService(false);

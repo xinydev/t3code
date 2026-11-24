@@ -2115,20 +2115,28 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
   const host = yield* ProviderHost.ProviderHost;
   const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
   const { flavor, selfInvocation: self } = options;
-  const callLauncher = yield* writeAcpMcpCallLauncher(host.paths.stateDir);
-  const readMcpContext = (threadId: ThreadId | null) =>
-    threadId === null
-      ? Effect.succeed(
-          acpMcpContext(undefined, self, flavor.mcpOverHttp, flavor.deferMcpTools, callLauncher),
-        )
-      : mcpSessions
-          .read(threadId)
-          .pipe(
-            Effect.map((session) =>
-              acpMcpContext(session, self, flavor.mcpOverHttp, flavor.deferMcpTools, callLauncher),
-            ),
-          );
   const driver = flavor.driver;
+  const t3IntegrationsEnabled = host.t3ProviderIntegrationsEnabled?.(driver) !== false;
+  const callLauncher = t3IntegrationsEnabled
+    ? yield* writeAcpMcpCallLauncher(host.paths.stateDir)
+    : undefined;
+  const readMcpSession = (threadId: ThreadId | null) =>
+    threadId === null || !t3IntegrationsEnabled ? Effect.undefined : mcpSessions.read(threadId);
+  const readMcpContext = (threadId: ThreadId | null) =>
+    readMcpSession(threadId).pipe(
+      Effect.map((session) => {
+        const context = acpMcpContext(
+          session,
+          self,
+          flavor.mcpOverHttp,
+          flavor.deferMcpTools,
+          callLauncher,
+        );
+        return !t3IntegrationsEnabled && threadId !== null
+          ? { ...context, processEnvironment: { T3CODE_THREAD_ID: threadId } }
+          : context;
+      }),
+    );
   const continuationRequests = options.continuationRequests;
 
   const readCapabilities = Effect.gen(function* () {
@@ -9377,14 +9385,14 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           turnInput: ProviderAdapter.ProviderAdapterV2TurnInput,
           sessionId: string,
         ) {
-          const mcpSession = yield* mcpSessions.read(turnInput.threadId);
+          const mcpSession = yield* readMcpSession(turnInput.threadId);
           const instructionState = {
             interactionMode: turnInput.runtimePolicy.interactionMode,
             hasT3Mcp: mcpSession !== undefined,
             hasDeviceTools: mcpSession?.capabilities?.has("device") === true,
           } satisfies T3AcpInstructionState;
           const userText =
-            flavor.rewriteUserText === undefined
+            !t3IntegrationsEnabled || flavor.rewriteUserText === undefined
               ? turnInput.message.text
               : yield* flavor
                   .rewriteUserText(turnInput.message.text, turnInput)
@@ -9415,25 +9423,32 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             deliveredContext,
             isNativeSlashCommand,
           );
-          const text = t3AcpPromptWithInstructions({
-            prompt: messageText,
-            state: instructionState,
-            ...(previousInstructionState === undefined || compactionMarker !== undefined
-              ? {}
-              : { previousState: previousInstructionState }),
-          });
+          const text = t3IntegrationsEnabled
+            ? t3AcpPromptWithInstructions({
+                prompt: messageText,
+                state: instructionState,
+                ...(previousInstructionState === undefined || compactionMarker !== undefined
+                  ? {}
+                  : { previousState: previousInstructionState }),
+              })
+            : messageText;
           const sessionSetup = yield* Ref.get(activeSessionSetup);
-          const runtimeInstructions = buildRuntimeInstructions({
-            agentFeedback: instructionState.hasT3Mcp ? (turnInput.agentFeedback ?? "off") : "off",
-            harness: flavor.runtimeHarness ?? driver,
-            model: turnInput.modelSelection.model,
-            runtimePolicy: turnInput.runtimePolicy,
-            pullRequestLinking:
-              sessionSetup === null ||
-              flavor.sessionCarriesPullRequestLinking?.(sessionSetup.initializeResult) !== true,
-          });
+          const runtimeInstructions = t3IntegrationsEnabled
+            ? buildRuntimeInstructions({
+                agentFeedback: instructionState.hasT3Mcp
+                  ? (turnInput.agentFeedback ?? "off")
+                  : "off",
+                harness: flavor.runtimeHarness ?? driver,
+                model: turnInput.modelSelection.model,
+                runtimePolicy: turnInput.runtimePolicy,
+                pullRequestLinking:
+                  sessionSetup === null ||
+                  flavor.sessionCarriesPullRequestLinking?.(sessionSetup.initializeResult) !== true,
+              })
+            : undefined;
           // The agent keeps its own history, so resend only after compaction or when the text changes.
           const sendRuntimeInstructions =
+            runtimeInstructions !== undefined &&
             !isNativeSlashCommand &&
             (compactionMarker !== undefined ||
               (yield* Ref.get(promptRuntimeInstructions)).get(sessionId) !== runtimeInstructions);

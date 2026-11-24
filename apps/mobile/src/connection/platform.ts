@@ -15,7 +15,6 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
-import Constants from "expo-constants";
 import * as Network from "expo-network";
 import { AppState } from "react-native";
 
@@ -190,9 +189,6 @@ const layerCapabilities = Layer.effectContext(
           bearerToken: Effect.succeedNone,
         }),
       ),
-      Context.add(ClientCapabilities.AnalyticsDevice, {
-        id: storage.loadOrCreateAnalyticsDeviceId.pipe(Effect.option),
-      }),
       Context.add(
         ClientCapabilities.RelayDeviceIdentity,
         ClientCapabilities.RelayDeviceIdentity.of({
@@ -215,7 +211,7 @@ const layerCapabilities = Layer.effectContext(
       Context.add(
         ClientCapabilities.ClientPresentation,
         ClientCapabilities.ClientPresentation.of({
-          metadata: authClientMetadata(Constants.expoConfig?.version),
+          metadata: authClientMetadata(),
         }),
       ),
       Context.add(

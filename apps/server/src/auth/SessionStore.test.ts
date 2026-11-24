@@ -664,7 +664,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("SessionStore.lay
       expect(
         beforeRevoke.find((entry) => entry.sessionId === administrative.sessionId)?.client
           .deviceType,
-      ).toBe("desktop");
+      ).toBe("unknown");
       expect(revokedCount).toBe(1);
       expect(afterRevoke).toHaveLength(1);
       expect(afterRevoke[0]?.sessionId).toBe(administrative.sessionId);

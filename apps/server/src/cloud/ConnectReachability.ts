@@ -499,3 +499,21 @@ const make = Effect.gen(function* () {
 });
 
 export const layer = Layer.effect(ConnectReachability, make);
+
+export const layerDisabled = Layer.succeed(ConnectReachability, {
+  check: DateTime.now.pipe(
+    Effect.map((now) =>
+      classifyReachability(
+        {
+          managedTunnelConfigured: false,
+          connector: null,
+          endpoint: null,
+          edgeReachable: null,
+          exitNode: null,
+        },
+        DateTime.formatIso(now),
+      ),
+    ),
+  ),
+  latest: Effect.succeedNone,
+});

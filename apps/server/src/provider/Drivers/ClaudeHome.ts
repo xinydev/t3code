@@ -12,6 +12,17 @@ import { readClaudeSettingsEnv } from "./ClaudeSkills.ts";
 
 const quotePath = Schema.encodeSync(Schema.fromJsonString(Schema.String));
 
+export const CLAUDE_REPORTING_DISABLED_ENV = {
+  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+  DISABLE_TELEMETRY: "1",
+  DISABLE_ERROR_REPORTING: "1",
+  DISABLE_BUG_COMMAND: "1",
+  DISABLE_FEEDBACK_COMMAND: "1",
+  CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY: "1",
+  CLAUDE_CODE_ENABLE_TELEMETRY: "0",
+  OTEL_SDK_DISABLED: "true",
+} as const;
+
 export const resolveClaudeHomePath = Effect.fn("resolveClaudeHomePath")(function* (
   config: Pick<ClaudeSettings, "homePath">,
   environment?: NodeJS.ProcessEnv,
@@ -34,7 +45,7 @@ export const makeClaudeEnvironment = Effect.fn("makeClaudeEnvironment")(function
   config: Pick<ClaudeSettings, "homePath">,
   baseEnv?: NodeJS.ProcessEnv,
 ): Effect.fn.Return<NodeJS.ProcessEnv, never, Path.Path> {
-  const resolvedBaseEnv = baseEnv ?? process.env;
+  const resolvedBaseEnv = { ...(baseEnv ?? process.env), ...CLAUDE_REPORTING_DISABLED_ENV };
   const homePath = config.homePath.trim();
   if (homePath.length === 0) return resolvedBaseEnv;
   const resolvedHomePath = yield* resolveClaudeHomePath(config);
@@ -79,7 +90,10 @@ export const mergeClaudeProcessEnvironment = Effect.fn("mergeClaudeProcessEnviro
   // The desktop runs the server as Node through Electron. Commands Claude runs inherit its env, so
   // an Electron app they start (T3 Code itself, VS Code) would run as Node and exit.
   delete baseEnvironment.ELECTRON_RUN_AS_NODE;
-  const environment = yield* mergeProviderInstanceEnvironment(instanceEnvironment, baseEnvironment);
+  const environment: NodeJS.ProcessEnv = {
+    ...(yield* mergeProviderInstanceEnvironment(instanceEnvironment, baseEnvironment)),
+    ...CLAUDE_REPORTING_DISABLED_ENV,
+  };
   const settingsEntrypoint = (yield* readClaudeSettingsEnv(config, undefined, environment))
     .CLAUDE_CODE_ENTRYPOINT;
   return settingsEntrypoint

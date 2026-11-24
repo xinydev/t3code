@@ -63,6 +63,8 @@ export function resolveCloudPublicConfig(): CloudPublicConfig {
   };
 }
 
+const RELAY_TRACE_EXPORT_ENABLED = false;
+
 let desktopRelayTelemetry: boolean | null = null;
 let serverRelayTelemetry: boolean | null = null;
 
@@ -81,7 +83,7 @@ export function relayTelemetryEnabled(): boolean | null {
 
 export function resolveRelayTracingConfig() {
   // The relay exporter is created during module initialization, so this must be synchronous.
-  if (relayTelemetryEnabled() === false) {
+  if (!RELAY_TRACE_EXPORT_ENABLED || relayTelemetryEnabled() === false) {
     return null;
   }
   const { relayTracing } = resolveCloudPublicConfig();

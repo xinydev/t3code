@@ -1070,6 +1070,8 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
   const runner = yield* CursorAgentSdk.CursorAgentSdkRunner;
   const platform = yield* HostProcess.Platform;
   const host = yield* ProviderHost.ProviderHost;
+  const t3IntegrationsEnabled =
+    host.t3ProviderIntegrationsEnabled?.(CursorAgentSdk.CURSOR_PROVIDER) !== false;
   const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
   const continuationRequests = yield* ProviderContinuationRequests.ProviderContinuationRequests;
   const adapterOptions = options;
@@ -2804,7 +2806,9 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
             runtimePolicy: openInput.runtimePolicy,
             platform,
             threadId: openInput.threadId,
-            mcpSession: yield* mcpSessions.read(openInput.threadId),
+            mcpSession: t3IntegrationsEnabled
+              ? yield* mcpSessions.read(openInput.threadId)
+              : undefined,
           });
           if (
             platform === "win32" &&
@@ -2839,6 +2843,7 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
         let cursorSkills: ReadonlyMap<string, ServerProviderSkill> | undefined;
         const resolveCursorSkillText = Effect.fn("CursorAdapterV2.resolveCursorSkillText")(
           function* (rawText: string, cwd: string | undefined) {
+            if (!t3IntegrationsEnabled) return rawText;
             if (
               cursorSkills === undefined &&
               (hasCursorSkillMention(rawText) || cursorSlashSkillNames(rawText).size > 0)
@@ -2884,25 +2889,25 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
           if (rawText.trim() === "/compress" && turnInput.message.attachments.length === 0) {
             return { message: "/compress", prompt: undefined, runtimeInstructions: undefined };
           }
-          const newText = t3OrchestrationPrompt({
-            prompt: yield* providerMessageTextWithAttachmentPaths({
-              text: yield* resolveCursorSkillText(
-                rawText,
-                turnInput.runtimePolicy.cwd ?? undefined,
-              ),
-              attachments: turnInput.message.attachments,
-              resolveAttachmentPath: host.resolveAttachmentPath,
-              resolveExtractedTextPath: host.resolveExtractedTextPath,
-            }),
-            hasT3Mcp: mcpServers !== undefined,
-            hasDeviceTools,
-            orchestrationDelivered: delivered.orchestration,
-            deviceInstructionsDelivered: delivered.device,
-            providerInstructions: CURSOR_BACKGROUND_WAIT_INSTRUCTIONS,
-            providerInstructionsDelivered: delivered.backgroundWait,
+          const messageText = yield* providerMessageTextWithAttachmentPaths({
+            text: yield* resolveCursorSkillText(rawText, turnInput.runtimePolicy.cwd ?? undefined),
+            attachments: turnInput.message.attachments,
+            resolveAttachmentPath: host.resolveAttachmentPath,
+            resolveExtractedTextPath: host.resolveExtractedTextPath,
           });
+          const newText = t3IntegrationsEnabled
+            ? t3OrchestrationPrompt({
+                prompt: messageText,
+                hasT3Mcp: mcpServers !== undefined,
+                hasDeviceTools,
+                orchestrationDelivered: delivered.orchestration,
+                deviceInstructionsDelivered: delivered.device,
+                providerInstructions: CURSOR_BACKGROUND_WAIT_INSTRUCTIONS,
+                providerInstructionsDelivered: delivered.backgroundWait,
+              })
+            : messageText;
           const userText =
-            interrupted === undefined
+            !t3IntegrationsEnabled || interrupted === undefined
               ? newText
               : `Your previous turn was interrupted and is missing from your history. Some of its work may already be done. Its request was:\n\n${interrupted}\n\nThe new message, which may continue or change that request:\n\n${newText}`;
           const images = yield* Effect.forEach(
@@ -2940,14 +2945,18 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
               detail: "Cursor turn requires non-empty text or attachments.",
             });
           }
-          const runtimeInstructions = buildRuntimeInstructions({
-            agentFeedback: mcpServers === undefined ? "off" : (turnInput.agentFeedback ?? "off"),
-            harness: "Cursor",
-            model: turnInput.modelSelection.model,
-            runtimePolicy: turnInput.runtimePolicy,
-          });
+          const runtimeInstructions = t3IntegrationsEnabled
+            ? buildRuntimeInstructions({
+                agentFeedback:
+                  mcpServers === undefined ? "off" : (turnInput.agentFeedback ?? "off"),
+                harness: "Cursor",
+                model: turnInput.modelSelection.model,
+                runtimePolicy: turnInput.runtimePolicy,
+              })
+            : undefined;
           // Resend only on a new/compacted/rewound conversation or when the instructions change.
-          const sendRuntimeInstructions = delivered.runtime !== runtimeInstructions;
+          const sendRuntimeInstructions =
+            runtimeInstructions !== undefined && delivered.runtime !== runtimeInstructions;
           const text = sendRuntimeInstructions
             ? userText.length === 0
               ? runtimeInstructions
@@ -2979,7 +2988,9 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
               modelSelection: turnInput.modelSelection,
               runtimePolicy: turnInput.runtimePolicy,
             });
-            const mcpSession = yield* mcpSessions.read(turnInput.threadId);
+            const mcpSession = t3IntegrationsEnabled
+              ? yield* mcpSessions.read(turnInput.threadId)
+              : undefined;
             const mcpServers = cursorMcpServers(mcpSession);
             const hasDeviceTools =
               mcpServers !== undefined && mcpSession?.capabilities?.has("device") === true;

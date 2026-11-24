@@ -119,6 +119,7 @@ import { getCodexServiceTierOptionValue } from "../../codexModelOptions.ts";
 import { ServerConfig } from "../../config.ts";
 import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import { buildCodexAdditionalContext } from "../../provider/CodexDeveloperInstructions.ts";
+import { t3ProviderIntegrationsEnabled } from "../../provider/t3ProviderIntegrations.ts";
 import {
   describeMcpElicitation,
   toMcpElicitationResponse,
@@ -917,6 +918,7 @@ export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTur
     readonly codexInput: ReadonlyArray<CodexSchema.V2TurnStartParams__UserInput>;
     readonly runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy;
     readonly modelSelection: ModelSelection;
+    readonly t3IntegrationsEnabled?: boolean;
     readonly hasT3Mcp?: boolean;
     readonly agentFeedback?: AgentFeedbackMode;
     readonly browserToolsAvailable?: boolean;
@@ -973,7 +975,7 @@ export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTur
       ]),
     );
     const t3Context =
-      input.hasT3Mcp === true
+      input.t3IntegrationsEnabled !== false && input.hasT3Mcp === true
         ? buildCodexAdditionalContext(
             {
               model: input.modelSelection.model,
@@ -987,7 +989,8 @@ export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTur
           )
         : undefined;
     // Its own entry, so the folder list reaches the model without T3 Code's MCP tools too.
-    const workspaceInstructions = buildWorkspaceInstructions(input.runtimePolicy);
+    const workspaceInstructions =
+      input.t3IntegrationsEnabled === false ? "" : buildWorkspaceInstructions(input.runtimePolicy);
     const workspaceContext =
       workspaceInstructions === ""
         ? undefined
@@ -2083,6 +2086,7 @@ export const createCodexAdapterV2 = Effect.fn("CodexAdapterV2.createCodexAdapter
 
   return yield* makeCodexAdapterV2({
     instanceId,
+    t3IntegrationsEnabled: t3ProviderIntegrationsEnabled(CODEX_PROVIDER),
     settings,
     environment: yield* mergeProviderInstanceEnvironment(environment, hostEnvironment),
     clientFactory,
@@ -2098,6 +2102,7 @@ export const createCodexAdapterV2 = Effect.fn("CodexAdapterV2.createCodexAdapter
 
 export interface CodexAdapterV2Options {
   readonly instanceId: ProviderInstanceId;
+  readonly t3IntegrationsEnabled?: boolean;
   readonly settings: CodexSettings;
   readonly environment: NodeJS.ProcessEnv;
   readonly clientFactory: CodexAppServerClientFactoryShape;
@@ -2604,6 +2609,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             nativeTurnId: string,
           ) {
             if (
+              adapterOptions.t3IntegrationsEnabled === false ||
               isDelegatedAppThread(context.input.appThread) ||
               !(yield* promptSuggestionsEnabled)
             ) {
@@ -8099,6 +8105,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               codexInput,
               runtimePolicy: turnInput.runtimePolicy,
               modelSelection: turnInput.modelSelection,
+              t3IntegrationsEnabled: adapterOptions.t3IntegrationsEnabled ?? true,
               hasT3Mcp: mcpSession !== undefined,
               agentFeedback: turnInput.agentFeedback ?? "off",
               browserToolsAvailable: mcpSession?.browserToolsAvailable ?? true,

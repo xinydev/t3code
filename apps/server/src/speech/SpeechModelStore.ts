@@ -26,11 +26,12 @@ class SpeechModelDownloadError extends Schema.TaggedError<SpeechModelDownloadErr
   "SpeechModelDownloadError",
   {
     modelId: Schema.String,
-    reason: Schema.Literals(["status", "range", "size", "verification"]),
+    reason: Schema.Literals(["status", "range", "size", "verification", "offline"]),
     status: Schema.optional(Schema.Number),
   },
 ) {
   override get message(): string {
+    if (this.reason === "offline") return "Link a local speech model. Downloads are disabled.";
     return `Speech model download failed: ${this.reason}${this.status === undefined ? "" : ` ${this.status}`}.`;
   }
 }
@@ -77,7 +78,7 @@ const PARTIAL_FILENAME =
 const LINK_SEARCH_DEPTH = 5;
 const LINK_SEARCH_ENTRIES = 5_000;
 
-const make = Effect.gen(function* () {
+const make = Effect.fnUntraced(function* (allowDownload: boolean) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const home = yield* HostProcess.HomeDirectory;
@@ -296,6 +297,9 @@ const make = Effect.gen(function* () {
         const linked = yield* link([model], copy).pipe(Effect.orElseSucceed(() => []));
         if (linked.length > 0) return finalPath;
       }
+      if (!allowDownload) {
+        return yield* new SpeechModelDownloadError({ modelId: model.id, reason: "offline" });
+      }
       const partialPath = `${finalPath}.${yield* random.uuidV4()}.part`;
       const url = `https://huggingface.co/${model.id}/resolve/${model.revision}/${model.filename}`;
       return yield* Effect.gen(function* () {
@@ -367,4 +371,5 @@ const make = Effect.gen(function* () {
   });
 });
 
-export const layer = Layer.effect(SpeechModelStore, make);
+export const layer = Layer.effect(SpeechModelStore, make(true));
+export const layerLocal = Layer.effect(SpeechModelStore, make(false));

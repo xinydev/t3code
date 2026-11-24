@@ -12,13 +12,27 @@ export const resolveCodexLaunchArgs = (
 
 const codexLaunchArgv = (launchArgs?: string): ReadonlyArray<string> => tokenizeCliArgs(launchArgs);
 
-// T3 unsubscribes only when it unloads a thread; Codex's own unload delay would stack on that.
-export const codexAppServerArgs = (launchArgs?: string) => [
-  "app-server",
+const CODEX_REPORTING_DISABLED_ARGS = [
   "-c",
-  "thread_unload_delay_secs=0",
-  ...codexLaunchArgv(launchArgs),
+  "analytics.enabled=false",
+  "-c",
+  "feedback.enabled=false",
+  "-c",
+  'otel.exporter="none"',
+  "-c",
+  'otel.trace_exporter="none"',
+  "-c",
+  'otel.metrics_exporter="none"',
 ];
+
+// T3 unsubscribes only when it unloads a thread; Codex's own unload delay would stack on that.
+export const codexAppServerArgs = (launchArgs?: string) => {
+  const args = codexLaunchArgv(launchArgs).filter((arg) => arg !== "--analytics-default-enabled");
+  const separator = args.indexOf("--");
+  // Codex applies config overrides in order. Keep these last and before an option terminator.
+  args.splice(separator === -1 ? args.length : separator, 0, ...CODEX_REPORTING_DISABLED_ARGS);
+  return ["app-server", "-c", "thread_unload_delay_secs=0", ...args];
+};
 
 interface LaunchArgFilter {
   readonly switches: ReadonlySet<string>;
@@ -77,8 +91,12 @@ const omitFeatureEnables = (args: ReadonlyArray<string>, features: ReadonlySet<s
     return !(args[index - 1] === "--enable" && features.has(arg));
   });
 
-export const codexExecLaunchArgs = (launchArgs?: string) =>
-  omitFeatureEnables(filterLaunchArgs(launchArgs, EXEC_FILTER), EXEC_DISABLED_FEATURES);
+export const codexExecLaunchArgs = (launchArgs?: string) => [
+  ...omitFeatureEnables(filterLaunchArgs(launchArgs, EXEC_FILTER), EXEC_DISABLED_FEATURES),
+  ...CODEX_REPORTING_DISABLED_ARGS,
+];
 
-export const codexMcpListLaunchArgs = (launchArgs?: string) =>
-  omitFeatureEnables(filterLaunchArgs(launchArgs, MCP_LIST_FILTER), MCP_LIST_DISABLED_FEATURES);
+export const codexMcpListLaunchArgs = (launchArgs?: string) => [
+  ...omitFeatureEnables(filterLaunchArgs(launchArgs, MCP_LIST_FILTER), MCP_LIST_DISABLED_FEATURES),
+  ...CODEX_REPORTING_DISABLED_ARGS,
+];

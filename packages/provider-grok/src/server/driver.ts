@@ -211,6 +211,7 @@ export const GrokDriver: ProviderDriver<GrokSettings, GrokDriverEnv, Path.Path> 
     const checkProvider = checkGrokProviderStatus(effectiveConfig, processEnv, cwd).pipe(
       Effect.filterOrElse(
         (snapshot) =>
+          host.allowOptionalProviderRequests === false ||
           !(
             effectiveConfig.enabled &&
             snapshot.installed &&

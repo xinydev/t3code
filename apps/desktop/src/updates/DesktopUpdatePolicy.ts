@@ -85,5 +85,12 @@ const make = Effect.gen(function* () {
 
 export const layer = Layer.effect(DesktopUpdatePolicy, make);
 
+export const layerDisabled = Layer.succeed(DesktopUpdatePolicy, {
+  mode: "off",
+  feedUrl: undefined,
+  allowNightly: false,
+  message: null,
+});
+
 export const layerTest = (policy: UpdatePolicy = unmanagedUpdatePolicy) =>
   Layer.succeed(DesktopUpdatePolicy, policy);

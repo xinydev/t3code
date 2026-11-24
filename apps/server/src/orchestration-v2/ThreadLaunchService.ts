@@ -70,6 +70,7 @@ import { randomUuidV4 } from "@t3tools/provider-core/server/randomUuid";
 import { DispatchModeLimit } from "./DispatchModeLimit.ts";
 import * as ThreadManagement from "./ThreadManagementService.ts";
 import { isWithinRoot } from "../workspace/KnownWorkspaces.ts";
+import { AutomaticProviderContext } from "../provider/t3ProviderIntegrations.ts";
 import * as TaskFolders from "../workspace/TaskFolders.ts";
 
 // The agent waits for its branch name; a rate-limited provider would hold it for minutes.
@@ -294,6 +295,7 @@ const make = Effect.gen(function* () {
   const setupScripts = yield* ProjectSetupScriptRunner.ProjectSetupScriptRunner;
   const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
+  const automaticContext = yield* AutomaticProviderContext;
   const textGeneration = yield* TextGeneration.TextGeneration;
   const receipts = yield* CommandReceiptStore.CommandReceiptStoreV2;
   const ids = yield* IdAllocator.IdAllocatorV2;
@@ -728,6 +730,7 @@ const make = Effect.gen(function* () {
           : null;
       // The agent waits for this LLM call; start it now so it overlaps fetch, checkout and setup.
       const branchName =
+        automaticContext &&
         reused === undefined &&
         initialMessage !== undefined &&
         (input.workspaceStrategy.type === "worktree" || worktreePath !== null) &&
@@ -977,6 +980,7 @@ const make = Effect.gen(function* () {
       }
 
       if (
+        automaticContext &&
         reused === undefined &&
         worktreePath !== null &&
         branch !== null &&

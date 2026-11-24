@@ -66,6 +66,7 @@ import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.t
 import * as ProviderAuthService from "../provider/ProviderAuthService.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as ContextHandoffService from "./ContextHandoffService.ts";
+import { AutomaticProviderContext } from "../provider/t3ProviderIntegrations.ts";
 import { withInlineContext } from "./ContextHandoffDelivery.ts";
 import * as EventSink from "./EventSink.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
@@ -474,6 +475,7 @@ it.each([
 
 function makeLocalCommandHarness(input: {
   readonly text: string;
+  readonly restartContinuation?: boolean;
   readonly manualContinuation?: boolean;
   readonly nativeResumeUnsupported?: boolean;
   readonly steeringRestart?: boolean;
@@ -546,6 +548,9 @@ function makeLocalCommandHarness(input: {
   const messageId = MessageId.make("message-native-account-command");
   const run: OrchestrationV2ThreadProjection["runs"][number] = {
     ...(input.manualContinuation ? { manualContinuationOfRunId: RunId.make("stopped-run") } : {}),
+    ...(input.restartContinuation
+      ? { restartContinuationOfRunId: RunId.make("interrupted-run") }
+      : {}),
     id: runId,
     threadId,
     ordinal: 2,
@@ -1238,11 +1243,15 @@ function makeLocalCommandHarness(input: {
             } as never)
           : runInput.session.startTurn(runInput as never)
         ).pipe(Effect.orDie)
-      : input.failReadsAfterRunning === true || input.previousTurn !== undefined
-        ? Effect.suspend(() =>
-            providerBusy ? Effect.die("The previous provider turn is still running.") : Effect.void,
-          )
-        : Effect.die("A local command must not start a native turn."),
+      : "historyReadFailureAfterFallback" in input
+        ? Effect.void
+        : input.failReadsAfterRunning === true || input.previousTurn !== undefined
+          ? Effect.suspend(() =>
+              providerBusy
+                ? Effect.die("The previous provider turn is still running.")
+                : Effect.void,
+            )
+          : Effect.die("A local command must not start a native turn."),
   );
   const failReadIfRunning = Effect.suspend(() =>
     input.failReadsAfterRunning === true &&
@@ -2438,6 +2447,51 @@ effectIt.effect.each([
         withInlineContext("SIDE_CHAT_CONTEXT", "Continue where you left off."),
       ]);
     }),
+);
+
+effectIt.effect("keeps pending side chat context out of a local provider turn", () =>
+  Effect.gen(function* () {
+    const harness = makeLocalCommandHarness({
+      text: "Current request",
+      sideChat: { contextRun: "current" },
+    });
+
+    yield* harness.start.pipe(Effect.provideService(AutomaticProviderContext, false));
+
+    expect(harness.startTurn.mock.calls.map(([turn]) => turn.message.text)).toEqual([
+      "Current request",
+    ]);
+  }),
+);
+
+effectIt.effect("drops a persisted automatic restart prompt before opening a provider", () =>
+  Effect.gen(function* () {
+    const harness = makeLocalCommandHarness({
+      text: "Continue from the previous turn.",
+      restartContinuation: true,
+    });
+
+    yield* harness.start.pipe(Effect.provideService(AutomaticProviderContext, false));
+
+    expect(harness.startTurn).not.toHaveBeenCalled();
+    expect(harness.settledRuns).toEqual(["failed"]);
+  }),
+);
+
+effectIt.effect("starts fresh after native resume fails without reading saved history", () =>
+  Effect.gen(function* () {
+    const harness = makeLocalCommandHarness({
+      text: "Only the new request",
+      historyReadFailureAfterFallback: "Saved conversation must stay unread",
+    });
+
+    yield* harness.start.pipe(Effect.provideService(AutomaticProviderContext, false));
+
+    expect(harness.fallbackEnsureThread).toHaveBeenCalledOnce();
+    expect(harness.startRootRun.mock.calls.map(([turn]) => turn.message.text)).toEqual([
+      "Only the new request",
+    ]);
+  }),
 );
 
 effectIt.effect.each([

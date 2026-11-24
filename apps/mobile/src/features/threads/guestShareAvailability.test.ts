@@ -3,9 +3,9 @@ import { describe, expect, it } from "vite-plus/test";
 import { canShareWithGuest } from "./guestShareAvailability";
 
 describe("mobile guest sharing availability", () => {
-  it("requires permission and the beta, and respects the environment's Connect policy", () => {
+  it("stays off even if the connected environment enables guest sharing", () => {
     const enabled = { settings: { guestSharingEnabled: true } };
-    expect(canShareWithGuest(true, enabled)).toBe(true);
+    expect(canShareWithGuest(true, enabled)).toBe(false);
     expect(canShareWithGuest(false, enabled)).toBe(false);
     expect(canShareWithGuest(true, undefined)).toBe(false);
     expect(canShareWithGuest(true, { settings: { guestSharingEnabled: false } })).toBe(false);
@@ -24,6 +24,6 @@ describe("mobile guest sharing availability", () => {
         ...enabled,
         managedPolicy: { organization: "Example", lockedSettings: [] },
       }),
-    ).toBe(true);
+    ).toBe(false);
   });
 });

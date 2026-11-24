@@ -9,6 +9,8 @@
       "corepack": true,
       "env": {
         "APP_VARIANT": "development",
+        "EXPO_NO_TELEMETRY": "1",
+        "DISABLE_EAS_ANALYTICS": "1",
         "NODE_OPTIONS": "--max-old-space-size=4096"
       },
       "channel": "development",
@@ -29,6 +31,8 @@
       "corepack": true,
       "env": {
         "APP_VARIANT": "preview",
+        "EXPO_NO_TELEMETRY": "1",
+        "DISABLE_EAS_ANALYTICS": "1",
         "NODE_OPTIONS": "--max-old-space-size=4096"
       },
       "channel": "preview",
@@ -42,6 +46,8 @@
       "corepack": true,
       "env": {
         "APP_VARIANT": "preview",
+        "EXPO_NO_TELEMETRY": "1",
+        "DISABLE_EAS_ANALYTICS": "1",
         "MOBILE_VERSION_POLICY": "fingerprint",
         "NODE_OPTIONS": "--max-old-space-size=4096"
       },
@@ -66,6 +72,8 @@
       "corepack": true,
       "env": {
         "APP_VARIANT": "production",
+        "EXPO_NO_TELEMETRY": "1",
+        "DISABLE_EAS_ANALYTICS": "1",
         "NODE_OPTIONS": "--max-old-space-size=4096",
         "SOURCEMAP_FILE": "/tmp/t3code-ios-main.jsbundle.map",
         "ORG_GRADLE_PROJECT_reactNativeArchitectures": "armeabi-v7a,arm64-v8a"

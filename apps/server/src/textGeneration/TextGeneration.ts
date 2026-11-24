@@ -244,5 +244,5 @@ export const make = Effect.gen(function* () {
 });
 
 export const layer = Layer.effect(TextGeneration, make).pipe(
-  Layer.provideMerge(TextGenerators.layer),
+  Layer.provideMerge(TextGenerators.layerDisabled),
 );

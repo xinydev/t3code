@@ -71,6 +71,10 @@ const buildCmd = Command.make(
   "build",
   {
     verbose: Flag.Boolean("verbose").pipe(Flag.withDefault(false)),
+    clientOnly: Flag.Boolean("client-only").pipe(
+      Flag.withDescription("Stage the web client for the standalone CLI archive."),
+      Flag.withDefault(false),
+    ),
   },
   (config) =>
     Effect.gen(function* () {
@@ -79,15 +83,17 @@ const buildCmd = Command.make(
       const repoRoot = yield* RepoRoot;
       const serverDir = path.join(repoRoot, "apps/server");
 
-      yield* Effect.log("[cli] Running tsdown...");
-      yield* runCommand(
-        ChildProcess.make(process.execPath, ["--run", "build:bundle"], {
-          cwd: serverDir,
-          stdout: config.verbose ? "inherit" : "ignore",
-          stderr: "inherit",
-          shell: false,
-        }),
-      );
+      if (!config.clientOnly) {
+        yield* Effect.log("[cli] Running tsdown...");
+        yield* runCommand(
+          ChildProcess.make(process.execPath, ["--run", "build:bundle"], {
+            cwd: serverDir,
+            stdout: config.verbose ? "inherit" : "ignore",
+            stderr: "inherit",
+            shell: false,
+          }),
+        );
+      }
 
       const webDist = path.join(repoRoot, "apps/web/dist");
       const clientTarget = path.join(serverDir, "dist/client");

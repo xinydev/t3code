@@ -89,6 +89,7 @@ import * as PortScanner from "../../preview/PortScanner.ts";
 import { attachmentRelativePath } from "../../attachmentStore.ts";
 import { WorkflowAgentTranscriptReadObserver } from "../workflowAgentTranscript.ts";
 import * as ServerConfig from "../../config.ts";
+import { CLAUDE_REPORTING_DISABLED_ENV } from "../../provider/Drivers/ClaudeHome.ts";
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import { T3_CODE_DEVICE_TOOL_INSTRUCTIONS_WITH_TOOL_SEARCH } from "@t3tools/provider-core/server/orchestrationInstructions";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
@@ -521,12 +522,13 @@ describe("ClaudeAdapterV2 runtime query policy", () => {
       nativeThreadId: "native-tool-search",
       resume: false,
       cwd: "/workspace",
-      sdkSettings: { env: { OTHER: "kept" } },
+      sdkSettings: { env: { OTHER: "kept", CLAUDE_CODE_ENABLE_TELEMETRY: "1" } },
       toolSearchOverride: "true",
     });
     assert.deepEqual((options.settings as { env?: Record<string, string> }).env, {
       OTHER: "kept",
       ENABLE_TOOL_SEARCH: "true",
+      ...CLAUDE_REPORTING_DISABLED_ENV,
     });
   });
 
@@ -949,6 +951,30 @@ describe("ClaudeAdapterV2 native protocol logging", () => {
     const logged = ClaudeAdapterV2.loggedClaudeQueryOptions(options);
     assert.deepEqual(logged.settingKeys, ["env", "showThinkingSummaries"]);
     assert.notInclude(JSON.stringify(logged), "secret-settings-key");
+  });
+
+  it("uses the native Claude prompt and honors user append text with T3 integrations disabled", () => {
+    const input = {
+      modelSelection: CLAUDE_TEST_MODEL_SELECTION,
+      nativeThreadId: "native-claude-prompt",
+      resume: false,
+      cwd: "/workspace",
+      t3IntegrationsEnabled: false,
+      promptSuggestions: true,
+    };
+    const native = ClaudeAdapterV2.makeClaudeQueryOptions(input);
+    assert.deepEqual(native.systemPrompt, { type: "preset", preset: "claude_code" });
+    assert.isFalse(native.promptSuggestions);
+    const configured = ClaudeAdapterV2.makeClaudeQueryOptions({
+      ...input,
+      settings: { ...DEFAULT_CLAUDE_SETTINGS, launchArgs: '--append-system-prompt "User notes"' },
+      appendSystemPromptFileText: "File notes\n",
+    });
+    assert.deepEqual(configured.systemPrompt, {
+      type: "preset",
+      preset: "claude_code",
+      append: "File notes\n\nUser notes",
+    });
   });
 });
 
@@ -13559,7 +13585,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                 tools: { type: "preset", preset: "claude_code" },
                 permissionMode: "bypassPermissions",
                 allowDangerouslySkipPermissions: true,
-                settings: { showThinkingSummaries: true },
+                settings: { env: CLAUDE_REPORTING_DISABLED_ENV, showThinkingSummaries: true },
                 sessionId: WAKE_NATIVE_SESSION,
               },
             },

@@ -429,3 +429,26 @@ export const make = Effect.fn("desktop.telemetryPublisher.make")(function* () {
 });
 
 export const layer = Layer.effect(DesktopTelemetryPublisher, make());
+
+export const layerShellEnvironmentOnly = Layer.effect(
+  DesktopTelemetryPublisher,
+  Effect.map(DesktopShellEnvironment.DesktopShellEnvironment, (shellEnvironment) => ({
+    latest: Effect.succeedNone,
+    changes: Stream.empty,
+    encoded: Stream.map(shellEnvironment.updates, (message) =>
+      textEncoder.encode(`${encodeMessage(message)}\n`),
+    ),
+    handleControlForSource: Effect.fn("DesktopTelemetryPublisher.handleControlForSource")(
+      () => Effect.void,
+    ),
+    removeControlSource: Effect.fn("DesktopTelemetryPublisher.removeControlSource")(
+      () => Effect.void,
+    ),
+    publishUpdateReport: Effect.fn("DesktopTelemetryPublisher.publishUpdateReport")(
+      () => Effect.void,
+    ),
+    updateRequests: Stream.empty,
+    updateCommits: Stream.empty,
+    updateCancellations: Stream.empty,
+  })),
+);

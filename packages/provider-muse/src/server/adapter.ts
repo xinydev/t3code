@@ -294,6 +294,8 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
 ) {
   const idAllocator = yield* IdAllocator.IdAllocatorV2;
   const providerHost = yield* ProviderHost.ProviderHost;
+  const t3IntegrationsEnabled =
+    providerHost.t3ProviderIntegrationsEnabled?.(MUSE_PROVIDER) !== false;
   const fileSystem = yield* FileSystem.FileSystem;
   const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
   const agentScope = yield* AgentScope;
@@ -2207,19 +2209,21 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
             const result = yield* request(
               "turn/start",
               {
-                input: [
-                  {
-                    type: "text",
-                    text: buildRuntimeInstructions({
-                      agentFeedback: hasT3Mcp ? (turnInput.agentFeedback ?? "off") : "off",
-                      harness: "Muse Code",
-                      model: session.model ?? undefined,
-                      reasoningEffort: effort,
-                      runtimePolicy: turnInput.runtimePolicy,
-                    }),
-                  },
-                  ...parts,
-                ],
+                input: t3IntegrationsEnabled
+                  ? [
+                      {
+                        type: "text",
+                        text: buildRuntimeInstructions({
+                          agentFeedback: hasT3Mcp ? (turnInput.agentFeedback ?? "off") : "off",
+                          harness: "Muse Code",
+                          model: session.model ?? undefined,
+                          reasoningEffort: effort,
+                          runtimePolicy: turnInput.runtimePolicy,
+                        }),
+                      },
+                      ...parts,
+                    ]
+                  : parts,
                 displayText: turnInput.message.text || "Image attachment",
                 // Resumed sessions retain old roots; pin edits to the current checkouts.
                 workspaceRoots: [workspaceRoot, ...extraWorkspaceRoots],

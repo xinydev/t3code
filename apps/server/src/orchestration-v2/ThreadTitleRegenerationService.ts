@@ -22,6 +22,7 @@ import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
 
 import * as ServerSettings from "../serverSettings.ts";
+import { AutomaticProviderContext } from "../provider/t3ProviderIntegrations.ts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
 import type { OrchestratorV2Error } from "./Orchestrator.ts";
 import * as ProjectStore from "./ProjectStore.ts";
@@ -78,6 +79,7 @@ function failureMessage(cause: Cause.Cause<unknown>): string {
 
 const make = Effect.gen(function* () {
   const threads = yield* ThreadManagementService.ThreadManagementService;
+  const automaticContext = yield* AutomaticProviderContext;
   const projects = yield* ProjectStore.ProjectStoreV2;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
   const textGeneration = yield* TextGeneration.TextGeneration;
@@ -154,6 +156,9 @@ const make = Effect.gen(function* () {
   const execute: ThreadTitleRegenerationService["Service"]["execute"] = Effect.fn(
     "ThreadTitleRegenerationService.execute",
   )(function* (input) {
+    if (!automaticContext && input.kind.type === "initial") {
+      return yield* complete({ ...input, outcome: { status: "unchanged" } });
+    }
     const outcome: Outcome | { readonly status: "stale" } = yield* Effect.gen(function* () {
       const projection = yield* threads.getThreadRecords(
         input.threadId,

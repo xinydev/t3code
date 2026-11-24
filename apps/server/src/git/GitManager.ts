@@ -90,6 +90,7 @@ import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.t
 import * as PullRequestService from "../pullRequest/PullRequestService.ts";
 import { createdPullRequestKey } from "./linkCreatedPullRequest.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
+import { AutomaticProviderContext } from "../provider/t3ProviderIntegrations.ts";
 import { extractBranchNameFromRemoteRef } from "./remoteRefs.ts";
 import { detachStackFrame } from "./detachStackFrame.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -824,6 +825,7 @@ function toPullRequestHeadRemoteInfo(pr: {
 }
 
 export const make = Effect.gen(function* () {
+  const automaticContext = yield* AutomaticProviderContext;
   const gitCore = yield* GitVcsDriver.GitVcsDriver;
   const sourceControlProviders = yield* SourceControlProviderRegistry.SourceControlProviderRegistry;
   const textGeneration = yield* TextGeneration.TextGeneration;
@@ -1106,6 +1108,7 @@ export const make = Effect.gen(function* () {
             : {},
         );
       case "repo_conventions": {
+        if (!automaticContext) return repositoryConventionsTextGenerationPolicy;
         const subjects = yield* readRecentCommitSubjects(cwd);
         const agentInstructions = yield* readRepositoryInstructions(cwd, "AGENTS.md");
         const isClaudeWriter =

@@ -1046,6 +1046,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
   const runtime = yield* OpenCodeRuntime.OpenCodeRuntime;
   const idAllocator = yield* IdAllocator.IdAllocatorV2;
   const host = yield* ProviderHost.ProviderHost;
+  const t3IntegrationsEnabled = host.t3ProviderIntegrationsEnabled?.(OPENCODE_PROVIDER) !== false;
   const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
   const continuationRequests = yield* ProviderContinuationRequests.ProviderContinuationRequests;
   const messageIdClock = yield* Ref.make({ epochMillis: -1, counter: 0 });
@@ -3519,17 +3520,21 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           return {
             ...(agent === undefined ? {} : { agent }),
             ...(variant === undefined ? {} : { variant }),
-            system: [
-              orchestrationSystemPrompt,
-              buildRuntimeInstructions({
-                harness: "OpenCode",
-                model: turn.modelSelection.model,
-                agentFeedback: hasT3Mcp ? turn.agentFeedback : "off",
-                runtimePolicy: turn.runtimePolicy,
-              }),
-            ]
-              .filter(Boolean)
-              .join("\n\n"),
+            ...(t3IntegrationsEnabled
+              ? {
+                  system: [
+                    orchestrationSystemPrompt,
+                    buildRuntimeInstructions({
+                      harness: "OpenCode",
+                      model: turn.modelSelection.model,
+                      agentFeedback: hasT3Mcp ? turn.agentFeedback : "off",
+                      runtimePolicy: turn.runtimePolicy,
+                    }),
+                  ]
+                    .filter(Boolean)
+                    .join("\n\n"),
+                }
+              : {}),
           };
         };
 

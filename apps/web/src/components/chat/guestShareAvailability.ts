@@ -1,5 +1,6 @@
 import { managedCapabilityDenial } from "@t3tools/client-runtime/contract-labels";
 import type { EnvironmentId } from "@t3tools/contracts";
+import { HOSTED_SHARING_ENABLED } from "@t3tools/shared/connectAuth";
 import { Atom } from "effect/reactivity";
 
 import { environmentPresentations } from "~/state/presentation";
@@ -14,6 +15,7 @@ export const canShareWithGuestAtom = Atom.family((environmentId: EnvironmentId) 
   Atom.make((get) => {
     const serverConfig = get(environmentPresentations.serverConfigsAtom).get(environmentId);
     return (
+      HOSTED_SHARING_ENABLED &&
       get(serverEnvironment.createGuestShare.permissionAtom(environmentId)) &&
       serverConfig?.settings.guestSharingEnabled === true &&
       managedCapabilityDenial(serverConfig.managedPolicy, "connect") === undefined

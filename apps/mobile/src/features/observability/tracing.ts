@@ -17,6 +17,8 @@ export interface TracingResource {
   readonly appVariant: string;
 }
 
+const RELAY_TRACE_EXPORT_ENABLED = false;
+
 const RELEASE_CHANNEL_BY_VARIANT: Readonly<Record<string, ReleaseChannel | undefined>> = {
   development: "dev",
   preview: "preview",
@@ -24,6 +26,7 @@ const RELEASE_CHANNEL_BY_VARIANT: Readonly<Record<string, ReleaseChannel | undef
 };
 
 export function resolveTracingConfig(): TracingConfig | null {
+  if (!RELAY_TRACE_EXPORT_ENABLED) return null;
   const config = resolveCloudPublicConfig();
   if (!hasTracingPublicConfig(config)) {
     return null;

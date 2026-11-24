@@ -13,7 +13,7 @@ T3 Code includes a built-in preview browser beside your conversation so you and 
 
 Configure defaults in **Settings → Browser**:
 
-- **Browser profiles**: Maintain separate cookie/storage profiles and set a **Default browser profile**. Desktop users can copy signed-in cookies from Chrome, Safari, Firefox, Zen, or Helium ([Import browser sessions](./browser-import.md)).
+- **Browser profiles**: Maintain separate cookie/storage profiles and set a **Default browser profile**. Desktop users can copy signed-in cookies from Chrome, Safari, Firefox, Zen, or Helium ([Import browser sessions](./browser-import.md)). Browser profile names and defaults stay with the client that configured them.
 - **Viewport, zoom & appearance**: Set **Default browser viewport** (fill, freeform, or phone/tablet presets with portrait/landscape rotation), **Default browser zoom**, and **Default browser appearance** (system/light/dark).
 - **Links & search**: Configure **Open links in** and **Search engine**.
 
@@ -24,8 +24,4 @@ Configure defaults in **Settings → Browser**:
 
 ## Agent browser access
 
-Agents can open tabs, navigate, click, type, inspect accessibility snapshots, and take screenshots using T3 Code's `preview_*` tools.
-
-- Toggle **Settings → Browser → Agent browser access** (per environment or project override; takes effect when the next agent session starts).
-- **Floating preview**: By default, agent-opened tabs float over chat (**Settings → Browser → Auto-show floating preview**). Turn this off to open them in the right panel instead.
-- **Take control**: Click **Take control** before interacting with an agent's tab, and release control when you want the agent to resume.
+This build leaves browser automation to the tools configured in your provider. You can open and interact with preview tabs from T3 Code.

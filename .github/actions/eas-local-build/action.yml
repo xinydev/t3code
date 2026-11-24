@@ -120,6 +120,8 @@ runs:
 
     - name: Setup EAS
       uses: expo/expo-github-action@c7b66a9c327a43a8fa7c0158e7f30d6040d2481e # v8.2.1
+      env:
+        DISABLE_EAS_ANALYTICS: "1"
       with:
         eas-version: latest
         eas-cache: ${{ inputs.cache }}
@@ -144,6 +146,7 @@ runs:
       working-directory: apps/mobile
       env:
         EXPO_TOKEN: ${{ inputs.expo-token }}
+        DISABLE_EAS_ANALYTICS: "1"
         ENVIRONMENT: ${{ inputs.environment }}
         PLATFORM: ${{ inputs.platform }}
       run: |
@@ -166,6 +169,8 @@ runs:
       working-directory: apps/mobile
       env:
         EXPO_TOKEN: ${{ inputs.expo-token }}
+        DISABLE_EAS_ANALYTICS: "1"
+        EXPO_NO_TELEMETRY: "1"
         MOBILE_SOURCEMAPS_R2: ${{ inputs.sourcemaps-r2 }}
         PLATFORM: ${{ inputs.platform }}
         PROFILE: ${{ inputs.profile }}

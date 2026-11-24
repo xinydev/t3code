@@ -12,7 +12,6 @@ import { Atom } from "effect/reactivity";
 import { isGuestPage } from "../guestPage";
 
 import * as Runtime from "../lib/runtime";
-import * as BackgroundActivityReporter from "../lib/backgroundActivityReporter";
 import * as ConnectionPlatform from "./platform";
 
 const layerProvidedConnectionPlatform = ConnectionPlatform.layer.pipe(Layer.provide(Runtime.layer));
@@ -28,11 +27,9 @@ type ConnectionLayerSource =
   | typeof Connection.layer
   | typeof layerSnapshotLoader
   | typeof Runtime.layer
-  | typeof ConnectionPlatform.layer
-  | typeof BackgroundActivityReporter.layerObserver
-  | typeof BackgroundActivityReporter.layer;
+  | typeof ConnectionPlatform.layer;
 
-const layerProvidedClientConnection = layerSnapshotLoader.pipe(
+const layerConnection = layerSnapshotLoader.pipe(
   Layer.provideMerge(
     Connection.layerWithOptions({
       environmentThemes: true,
@@ -40,17 +37,7 @@ const layerProvidedClientConnection = layerSnapshotLoader.pipe(
       usageLimitsCommand: true,
     }),
   ),
-  Layer.provideMerge(
-    Layer.mergeAll(
-      Runtime.layer,
-      layerProvidedConnectionPlatform,
-      BackgroundActivityReporter.layerObserver,
-    ),
-  ),
-);
-
-const layerConnection = BackgroundActivityReporter.layer.pipe(
-  Layer.provideMerge(layerProvidedClientConnection),
+  Layer.provideMerge(Layer.mergeAll(Runtime.layer, layerProvidedConnectionPlatform)),
 );
 
 /**

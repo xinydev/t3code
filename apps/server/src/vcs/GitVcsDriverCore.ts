@@ -16,6 +16,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import * as Ref from "effect/Ref";
+import * as References from "effect/References";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import * as Schedule from "effect/Schedule";
@@ -776,7 +777,10 @@ const createTrace2Monitor = Effect.fnUntraced(function* (
   PlatformError.PlatformError,
   Scope.Scope | FileSystem.FileSystem | Path.Path
 > {
-  if (!progress?.onHookStarted && !progress?.onHookFinished) {
+  if (
+    (!progress?.onHookStarted && !progress?.onHookFinished) ||
+    !(yield* References.TracerEnabled)
+  ) {
     return {
       env: {},
       flush: Effect.void,

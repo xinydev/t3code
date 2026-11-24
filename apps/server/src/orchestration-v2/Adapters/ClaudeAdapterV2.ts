@@ -202,6 +202,7 @@ import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
 import { spawnAndCollect } from "@t3tools/provider-core/server/snapshotProbe";
 import { signalProcessGroup } from "@t3tools/provider-core/server/processGroup";
 import {
+  CLAUDE_REPORTING_DISABLED_ENV,
   claudeLocalSettingsDirectory,
   claudeSignedOutMessage,
   makeClaudeEnvironment,
@@ -232,6 +233,7 @@ import {
   T3_CODE_ORCHESTRATION_INSTRUCTIONS,
 } from "@t3tools/provider-core/server/orchestrationInstructions";
 import { buildRuntimeInstructions } from "@t3tools/provider-core/server/runtimeInstructions";
+import { t3ProviderIntegrationsEnabled } from "../../provider/t3ProviderIntegrations.ts";
 import {
   mcpToolPresentation,
   normalizeMcpText,
@@ -2592,6 +2594,7 @@ export function makeClaudeQueryOptions(input: {
   readonly promptSuggestions?: boolean;
   readonly sdkSettings?: string | ClaudeSdkSettings;
   readonly environment?: NodeJS.ProcessEnv;
+  readonly t3IntegrationsEnabled?: boolean;
   readonly mcpServers?: ClaudeQueryOptions["mcpServers"];
   readonly agentFeedback?: AgentFeedbackMode;
   /** The thread's T3 MCP session holds the `device` capability. */
@@ -2679,9 +2682,6 @@ export function makeClaudeQueryOptions(input: {
         };
   // A settings file path cannot take extra keys, so it goes through unchanged.
   const effectiveQuerySettings =
-    (input.toolSearchOverride === undefined &&
-      aliasOverrideEnv === undefined &&
-      autoCompactWindow === undefined) ||
     typeof compactQuerySettings === "string"
       ? compactQuerySettings
       : ({
@@ -2696,10 +2696,28 @@ export function makeClaudeQueryOptions(input: {
             ...(input.toolSearchOverride === undefined
               ? {}
               : { ENABLE_TOOL_SEARCH: input.toolSearchOverride }),
+            // Claude settings can override the process environment.
+            ...CLAUDE_REPORTING_DISABLED_ENV,
           },
         } as ClaudeSdkSettings);
-  const deviceInstructions = input.mcpServers !== undefined && input.deviceToolsAvailable === true;
+  const t3Enabled = input.t3IntegrationsEnabled !== false;
+  const deviceInstructions =
+    t3Enabled && input.mcpServers !== undefined && input.deviceToolsAvailable === true;
   const agentFeedback = input.mcpServers === undefined ? "off" : (input.agentFeedback ?? "off");
+  const t3Prompt = t3Enabled
+    ? buildRuntimeInstructions({
+        harness: "Claude Code",
+        agentFeedback,
+        runtimePolicy: { cwd: input.cwd, workspace: input.workspace },
+      }) +
+      (input.mcpServers === undefined
+        ? ""
+        : T3_CODE_ORCHESTRATION_INSTRUCTIONS +
+          CLAUDE_BACKGROUND_WAIT_INSTRUCTIONS +
+          CLAUDE_SEND_TO_USER_INSTRUCTIONS +
+          (deviceInstructions ? `\n${T3_CODE_DEVICE_TOOL_INSTRUCTIONS_WITH_TOOL_SEARCH}\n` : ""))
+    : "";
+  const append = [t3Prompt, ...launchAppendSystemPrompt].filter(Boolean).join("\n\n");
   const options: ClaudeAgentSdkQueryOptions = {
     model: compiledSelection.apiModelId,
     // T3 names threads; a supplied title skips Claude's redundant naming request.
@@ -2711,7 +2729,7 @@ export function makeClaudeQueryOptions(input: {
         ? "bypassPermissions"
         : (input.permissionMode ?? "default")),
     includePartialMessages: true,
-    promptSuggestions: input.promptSuggestions === true,
+    promptSuggestions: t3Enabled && input.promptSuggestions === true,
     ...(compiledSelection.effort === undefined
       ? {}
       : {
@@ -2736,9 +2754,7 @@ export function makeClaudeQueryOptions(input: {
                   showThinkingSummaries: true,
                 },
         }
-      : effectiveQuerySettings === undefined
-        ? {}
-        : { settings: effectiveQuerySettings }),
+      : { settings: effectiveQuerySettings }),
     ...(input.onUserDialog === undefined ? {} : { onUserDialog: input.onUserDialog }),
     ...(input.onElicitation === undefined ? {} : { onElicitation: input.onElicitation }),
     ...(input.supportedDialogKinds === undefined
@@ -2752,22 +2768,7 @@ export function makeClaudeQueryOptions(input: {
     systemPrompt: {
       type: "preset" as const,
       preset: "claude_code" as const,
-      append: [
-        buildRuntimeInstructions({
-          harness: "Claude Code",
-          agentFeedback,
-          runtimePolicy: { cwd: input.cwd, workspace: input.workspace },
-        }) +
-          (input.mcpServers === undefined
-            ? ""
-            : T3_CODE_ORCHESTRATION_INSTRUCTIONS +
-              CLAUDE_BACKGROUND_WAIT_INSTRUCTIONS +
-              CLAUDE_SEND_TO_USER_INSTRUCTIONS +
-              (deviceInstructions
-                ? `\n${T3_CODE_DEVICE_TOOL_INSTRUCTIONS_WITH_TOOL_SEARCH}\n`
-                : "")),
-        ...launchAppendSystemPrompt,
-      ].join("\n\n"),
+      ...(append ? { append } : {}),
     },
     ...(deviceInstructions || input.onStop !== undefined
       ? {
@@ -6174,6 +6175,7 @@ function claudeProposedPlan(input: unknown): string | null {
 
 export interface ClaudeAdapterV2Options {
   readonly instanceId: ProviderInstanceId;
+  readonly t3IntegrationsEnabled?: boolean;
   readonly settings: ClaudeSettings;
   readonly modelCatalog?: Effect.Effect<ClaudeModelCatalog>;
   readonly environment: NodeJS.ProcessEnv;
@@ -14129,7 +14131,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 fileSystem,
                 path,
               }),
-              resolveToolSearchOverride(turnInput.runtimePolicy.cwd, launchArgSettings),
+              adapterOptions.t3IntegrationsEnabled === false
+                ? Effect.undefined
+                : resolveToolSearchOverride(turnInput.runtimePolicy.cwd, launchArgSettings),
             ],
             { concurrency: "unbounded" },
           );
@@ -14153,6 +14157,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           const shouldResume =
             resumeSessionAt !== undefined || openedWithResume || hasPersistedProviderTurn;
           const queryOptions = makeClaudeQueryOptions({
+            t3IntegrationsEnabled: adapterOptions.t3IntegrationsEnabled ?? true,
             agentFeedback: turnInput.agentFeedback ?? "off",
             modelSelection: turnInput.modelSelection,
             modelCatalog: catalog,
@@ -14197,7 +14202,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             canUseTool,
             onUserDialog,
             onElicitation,
-            onStop,
+            ...(adapterOptions.t3IntegrationsEnabled === false ? {} : { onStop }),
             supportedDialogKinds: ["resume_return"],
             ...(appendSystemPromptFileText === undefined ? {} : { appendSystemPromptFileText }),
             ...(toolSearchOverride === undefined ? {} : { toolSearchOverride }),
@@ -16067,6 +16072,7 @@ export const createClaudeAdapterV2 = Effect.fn("ClaudeAdapterV2Driver.create")(
     );
     return yield* makeClaudeAdapterV2({
       instanceId,
+      t3IntegrationsEnabled: t3ProviderIntegrationsEnabled(CLAUDE_PROVIDER),
       settings: { ...config, enabled, binaryPath },
       environment: claudeEnvironment,
       attachmentsDir: serverConfig.attachmentsDir,

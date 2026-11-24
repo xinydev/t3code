@@ -13,10 +13,20 @@ import * as Tracing from "./tracing";
 vi.mock("expo-constants", () => ({
   default: {
     expoConfig: {
-      extra: {},
+      extra: {
+        observability: {
+          tracesUrl: "https://api.axiom.test/v1/traces",
+          tracesDataset: "mobile-traces",
+          tracesToken: "public-ingest-token",
+        },
+      },
     },
   },
 }));
+
+it("disables configured relay tracing in the app build", () => {
+  expect(Tracing.resolveTracingConfig()).toBeNull();
+});
 
 const layerTracingTo = (fetchFn: typeof fetch) =>
   Tracing.layerFromConfig(

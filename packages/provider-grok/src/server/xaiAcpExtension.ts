@@ -989,13 +989,8 @@ export interface XAiExitPlanModeResponse {
 }
 
 /** Abandon the native approval gate after T3 captures the plan; implementation uses T3 UI. */
-export function makeXAiExitPlanModeCapturedResponse(feedback?: string): XAiExitPlanModeResponse {
-  return {
-    outcome: "abandoned",
-    feedback:
-      feedback ??
-      "The client captured your proposed plan. Stop here and wait for the user's feedback or implementation request in a later turn.",
-  };
+export function makeXAiExitPlanModeCapturedResponse(): XAiExitPlanModeResponse {
+  return { outcome: "abandoned" };
 }
 
 function normalizeFsPath(value: string): string {

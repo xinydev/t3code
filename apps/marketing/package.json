@@ -5,9 +5,9 @@
   "type": "module",
   "scripts": {
     "stage:install-scripts": "node scripts/stage-install-scripts.mjs",
-    "dev": "node scripts/stage-install-scripts.mjs && astro dev",
-    "build": "node scripts/stage-install-scripts.mjs && astro build",
-    "preview": "astro preview",
+    "dev": "node scripts/stage-install-scripts.mjs && ASTRO_TELEMETRY_DISABLED=1 astro dev",
+    "build": "node scripts/stage-install-scripts.mjs && ASTRO_TELEMETRY_DISABLED=1 astro build",
+    "preview": "ASTRO_TELEMETRY_DISABLED=1 astro preview",
     "test": "vp test run"
   },
   "dependencies": {

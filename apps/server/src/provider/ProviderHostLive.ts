@@ -16,6 +16,7 @@ import * as ServerSettings from "../serverSettings.ts";
 import * as DocumentText from "./DocumentText.ts";
 import * as ModelManifest from "./ModelManifest.ts";
 import * as ProviderCredentialStore from "./ProviderCredentialStore.ts";
+import { t3ProviderIntegrationsEnabled } from "./t3ProviderIntegrations.ts";
 
 export const layer = Layer.effect(
   ProviderHost.ProviderHost,
@@ -55,7 +56,13 @@ export const layer = Layer.effect(
         changes: serverSettings.streamChanges,
         subscribe: serverSettings.subscribeChanges,
       },
-      shouldRunBackgroundWork: backgroundPolicy.shouldRunScopeWork,
+      shouldRunBackgroundWork: Effect.fn("ProviderHost.shouldRunBackgroundWork")((scope) =>
+        scope.type === "provider-status"
+          ? Effect.succeed(false)
+          : backgroundPolicy.shouldRunScopeWork(scope),
+      ),
+      allowOptionalProviderRequests: false,
+      t3ProviderIntegrationsEnabled,
       ...Option.match(lifecycleEvents, {
         onNone: () => ({}),
         onSome: (events) => ({ awaitServerReady: events.awaitReady }),

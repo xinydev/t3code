@@ -1,4 +1,5 @@
 import { PRIMARY_LOCAL_ENVIRONMENT_ID } from "@t3tools/contracts";
+import * as DiagnosticCollection from "@t3tools/shared/diagnosticCollection";
 import {
   makeLocalFileTracer,
   makeTraceSink,
@@ -350,7 +351,7 @@ const readPersistedObservabilitySettings: Effect.Effect<
 });
 
 const resolveOtlpEndpoints = Effect.gen(function* () {
-  const otel = yield* OtelEnvironment.load;
+  const otel: OtelEnvironment.OtelEnvironment = { ...OtelEnvironment.none, disabled: true };
   if (otel.disabled) {
     return {
       traces: undefined,
@@ -701,4 +702,19 @@ export const layer = Layer.mergeAll(
   Layer.succeed(References.MinimumLogLevel, "Info"),
   Layer.succeed(Tracer.MinimumTraceLevel, "Info"),
   Layer.succeed(References.TracerTimingEnabled, true),
+);
+
+export const layerWithoutCollection = Layer.merge(
+  DiagnosticCollection.layer,
+  Layer.succeed(DesktopBackendOutputLogFactory, {
+    forInstance: Effect.fn("DesktopBackendOutputLogFactory.forInstance")(() =>
+      Effect.succeed({
+        beginSession: () => Effect.void,
+        writeOutputChunk: () => Effect.void,
+        persistFailureSnapshot: () => Effect.void,
+        persistFailure: () => Effect.void,
+        discardSession: Effect.void,
+      }),
+    ),
+  }),
 );

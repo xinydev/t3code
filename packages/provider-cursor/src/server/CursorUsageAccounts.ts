@@ -219,6 +219,7 @@ const make = Effect.gen(function* () {
     const recentFailure = failures.get(credentialKey);
     let refreshing = false;
     if (
+      host.allowOptionalProviderRequests !== false &&
       (recentFailure === undefined || nowMs - recentFailure.atMs >= CURSOR_ACCOUNT_TTL_MS) &&
       !isCursorCacheFresh(caches.get(credentialKey), nowMs, retentionStartMs)
     ) {
@@ -240,6 +241,7 @@ const make = Effect.gen(function* () {
     const failureMessage = failure === undefined ? undefined : failure.error;
     if (failureMessage === null) return null;
     if (cache === undefined) {
+      if (host.allowOptionalProviderRequests === false) return null;
       return {
         dir: "cursor-account",
         ...(refreshing

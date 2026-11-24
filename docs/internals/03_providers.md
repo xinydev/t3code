@@ -69,8 +69,8 @@ and permission claims match what the protocol can enforce.
   read-only installs (such as Nix) manual-only.
 - **Attachments stay outside the project workspace.** Never copy uploads into the project tree to
   bypass a provider's sandbox or approval rules.
-- **T3 MCP tools.** Inject the thread's authenticated MCP server so agents can reach T3 tools, and
-  keep turns working if that server is unreachable.
+- **T3 MCP tools.** The [provider integration policy](../../apps/server/src/provider/t3ProviderIntegrations.ts)
+  controls automatic T3 MCP registration and prompts. Keep turns working without the MCP server.
 
 ## Model manifest
 

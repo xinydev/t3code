@@ -40,6 +40,9 @@ Registry agents enforce their own sandbox and approval rules (switchable via the
 
 File reads and searches never wait for approval. Devin runs commands in T3 Code terminals; other agents run their own terminals and report output/exit status.
 
+Registry agents use the tools and MCP servers configured in their own harness. Child-task
+presentation depends on what the agent reports over ACP.
+
 ## Checkpoints
 
-Checkpoint rollback restores workspace files as usual. Because ACP agents cannot rewind their own conversation, the next turn starts a fresh session with the kept conversation history.
+Checkpoint rollback restores the workspace files. The next turn starts a fresh ACP session with your new request and any context you attach.

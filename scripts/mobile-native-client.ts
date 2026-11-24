@@ -218,6 +218,8 @@ const command = Effect.fn("nativeClient.command")(function* (
         T3CODE_IOS_PERSONAL_TEAM: "0",
         CI: "1",
         EXPO_NO_GIT_STATUS: "1",
+        EXPO_NO_TELEMETRY: "1",
+        DISABLE_EAS_ANALYTICS: "1",
         // macOS tar otherwise adds AppleDouble entries that change the extracted bundle.
         COPYFILE_DISABLE: "1",
       },
@@ -1072,6 +1074,8 @@ const install = Effect.fn("nativeClient.install")(function* (
     yield* command("adb", ["-s", device, "reverse", "tcp:8081", "tcp:8081"]).pipe(Effect.ignore);
 });
 
+const NATIVE_CACHE_TELEMETRY_ENABLED = false;
+
 const reportTelemetry = Effect.fn("nativeClient.reportTelemetry")(
   function* (
     home: string,
@@ -1079,6 +1083,7 @@ const reportTelemetry = Effect.fn("nativeClient.reportTelemetry")(
     source: "local" | "remote" | "executed" | "failed",
     savedMs: number,
   ) {
+    if (!NATIVE_CACHE_TELEMETRY_ENABLED) return;
     const remote = yield* remoteCache(home);
     if (!remote) return;
     const environment = yield* HostProcess.Environment;

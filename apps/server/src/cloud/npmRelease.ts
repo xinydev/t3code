@@ -127,6 +127,12 @@ export const make = Effect.fn("NpmRelease.make")(function* () {
   });
 });
 
+export const layerDisabled = Layer.succeed(NpmRelease, {
+  get: Effect.fn("NpmRelease.get")(() =>
+    Effect.fail(new ServerNpmReleaseError({ reason: "Updates are disabled in this build." })),
+  ),
+});
+
 export const layer = Layer.effect(NpmRelease, make()).pipe(
   Layer.provide([ProcessRunner.layer, FetchHttpClient.layer]),
 );

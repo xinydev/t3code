@@ -11,7 +11,6 @@ import * as Schema from "effect/Schema";
 import { applyAppearanceContrast } from "./appearanceContrast";
 import { applyAppearanceFontVariables, TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "./appearanceFonts";
 import { startElectronBrowserHost } from "./browser/ElectronBrowserHost";
-import { startBrowserProfileReporting } from "./browser/BrowserProfileReporter";
 import { startPreviewTitleRecording } from "./browserHistoryStore";
 import { setServerRelayTelemetry } from "./cloud/publicConfig";
 import { retainThreadOverlaysForThread } from "./components/chat/threadOverlayRetention";
@@ -289,7 +288,6 @@ export function startAppServices(): AppRouter {
   startAgentOpenedPreviews();
   if (isElectron) startElectronBrowserHost();
   startPreviewTitleRecording();
-  startBrowserProfileReporting();
   installChatRouteCommands(router);
   installCommandPaletteCommands(router);
   registerOpenFavoriteEditorCommand();

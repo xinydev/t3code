@@ -75,6 +75,39 @@ const extractingRunner = (fs: FileSystem.FileSystem, path: Path.Path, commands: 
   });
 
 it.layer(NodeServices.layer)("ensurePinnedRuntimeInstalled", (it) => {
+  it.effect("installs a local archive without contacting the release source", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pinned-local-" });
+      const source = path.join(baseDir, "extracted");
+      yield* fs.makeDirectory(path.join(source, "client"), { recursive: true });
+      yield* fs.writeFileString(path.join(source, "t3"), "#!/bin/sh\n", { mode: 0o755 });
+      yield* fs.writeFileString(path.join(source, "client", "index.html"), "<title>T3</title>");
+      const requests: string[] = [];
+      const commands: string[] = [];
+      const paths = yield* ensurePinnedRuntimeInstalled({
+        baseDir,
+        version,
+        fs,
+        path,
+        platform: "linux",
+        arch: "x64",
+        localRuntimeDirectory: source,
+        httpClient: releaseHttpClient("", requests),
+        runner: extractingRunner(fs, path, commands),
+        validate: (runtime) => fs.access(runtime.entryPath).pipe(Effect.orDie),
+      });
+      assert.deepEqual(requests, []);
+      assert.deepEqual(commands, []);
+      assert.equal(yield* fs.readFileString(paths.sentinelPath), `${version}\n`);
+      assert.equal(
+        yield* fs.readFileString(path.join(paths.versionDir, "client", "index.html")),
+        "<title>T3</title>",
+      );
+    }),
+  );
+
   it.effect("installs the verified release archive as the runtime executable", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

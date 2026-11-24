@@ -74,6 +74,7 @@ export const startMetro = Effect.fn("session.startMetro")(function* (input: {
             ...process.env,
             APP_VARIANT: "development",
             CI: "1",
+            EXPO_NO_TELEMETRY: "1",
             // Lazily fetched chunks sometimes arrive broken on pool emulators and throw SyntaxErrors.
             EXPO_NO_METRO_LAZY: "1",
             EXPO_PUBLIC_T3_BEHAVIOR_PROBE: "1",

@@ -69,3 +69,8 @@ const make = Effect.fn("resourceTelemetry.resourceAttribution.make")(function* (
 });
 
 export const layer = Layer.effect(ResourceAttribution, make());
+
+export const layerDisabled = Layer.succeed(ResourceAttribution, {
+  record: Effect.fn("ResourceAttribution.record")(() => Effect.void),
+  snapshot: Effect.map(DateTime.now, (readAt) => ({ readAt, entries: [] })),
+});

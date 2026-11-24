@@ -7,6 +7,7 @@ import {
   DEFAULT_WORKFLOW_SKIPPED_RUNS_KEPT,
   MAX_WORKFLOW_SKIPPED_RUNS_KEPT,
 } from "@t3tools/contracts";
+import { HOSTED_SHARING_ENABLED } from "@t3tools/shared/connectAuth";
 import { T, useGT, useMessages } from "gt-react";
 
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
@@ -40,7 +41,8 @@ export function LabsSettingsPanel() {
       <SettingsSection id="beta" title={gt("Beta")}>
         <BoringSidebarRow />
         {/* Clerk is only mounted when this build has T3 Connect. */}
-        {hasCloudPublicConfig() ? <GuestLinksRowWithSignIn /> : <GuestLinksRow />}
+        {HOSTED_SHARING_ENABLED &&
+          (hasCloudPublicConfig() ? <GuestLinksRowWithSignIn /> : <GuestLinksRow />)}
         <LinkedEnvironmentsRow />
         <WorkflowsRow />
         <WorkflowSkippedRunsRow />

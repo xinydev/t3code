@@ -45,6 +45,7 @@ import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/sql/SqlClient";
 import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import { resolveSymlinkTarget } from "@t3tools/shared/symlink";
+import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
 import * as ServerConfig from "./config.ts";
 import { type DeepPartial, deepMerge } from "@t3tools/shared/Struct";
 import { fromJsonStringPretty, fromLenientJson } from "@t3tools/shared/schemaJson";
@@ -564,6 +565,40 @@ function migrateLegacyProviderSettings(
 type DriverAllowed = (driver: ProviderDriverKind) => boolean;
 const anyDriver: DriverAllowed = () => true;
 
+function localSettings(settings: ServerSettings): ServerSettings {
+  return {
+    ...settings,
+    agentFeedback: { mode: "off" },
+    guestSharingEnabled: false,
+    enableProviderUpdateChecks: false,
+    promptSuggestionsEnabled: false,
+    continueThreadsAfterServerUpdate: false,
+    projectSettingsOverrides: Object.fromEntries(
+      Object.entries(settings.projectSettingsOverrides).map(([id, overrides]) => [
+        id,
+        overrides.continueThreadsAfterServerUpdate === true
+          ? { ...overrides, continueThreadsAfterServerUpdate: false }
+          : overrides,
+      ]),
+    ),
+    autoResumeLimitedThreads: false,
+    textGenerators: {},
+    usageLimitSources: {},
+    backgroundActivity: {
+      ...settings.backgroundActivity,
+      profile: "custom",
+      baseProfile: resolveServerBackgroundActivitySettings(settings).profile,
+      overrides: {
+        ...settings.backgroundActivity.overrides,
+        automaticGitFetchInterval: Duration.zero,
+        providerHealthRefreshInterval: Duration.zero,
+      },
+    },
+    automaticGitFetchInterval: Duration.zero,
+    providerHealthRefreshInterval: Duration.zero,
+  };
+}
+
 function resolveTextGenerationProvider(
   settings: ServerSettings,
   isDriverAllowed: DriverAllowed = anyDriver,
@@ -723,7 +758,7 @@ function foldLegacyProjectSettings(
   };
 }
 
-const make = Effect.gen(function* () {
+const make = Effect.fnUntraced(function* (localOnly: boolean) {
   const { settingsPath } = yield* ServerConfig.ServerConfig;
   const fs = yield* FileSystem.FileSystem;
   const pathService = yield* Path.Path;
@@ -735,11 +770,13 @@ const make = Effect.gen(function* () {
     summary: managedPolicy,
   } = yield* ManagedPolicy.ManagedPolicy;
   // Locks are laid over every settings value that leaves this service, never persisted.
-  const toEffective = (settings: ServerSettings) =>
-    resolveTextGenerationProvider(
-      managedProviders.applyLimits(managed.applyLocks(settings)),
+  const toEffective = (settings: ServerSettings) => {
+    const managedSettings = managedProviders.applyLimits(managed.applyLocks(settings));
+    return resolveTextGenerationProvider(
+      localOnly ? localSettings(managedSettings) : managedSettings,
       managedProviders.isDriverAllowed,
     );
+  };
   const writeSemaphore = yield* Semaphore.make(1);
   const cacheKey = "settings" as const;
   const changesPubSub = yield* PubSub.unbounded<ServerSettings>();
@@ -1477,4 +1514,5 @@ const make = Effect.gen(function* () {
   } satisfies ServerSettingsService["Service"];
 });
 
-export const layer = Layer.effect(ServerSettingsService, make);
+export const layer = Layer.effect(ServerSettingsService, make(false));
+export const layerLocal = Layer.effect(ServerSettingsService, make(true));

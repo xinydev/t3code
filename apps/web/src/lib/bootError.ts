@@ -87,8 +87,6 @@ export interface BootErrorEnvironment {
   readonly version: string;
   readonly channel: string;
   readonly surface: "desktop" | "web";
-  readonly platform: string;
-  readonly userAgent: string;
   readonly time: string;
 }
 
@@ -116,18 +114,8 @@ export function buildErrorReport(error: unknown, environment: BootErrorEnvironme
     `Version: ${environment.version}`,
     `Channel: ${environment.channel}`,
     `Surface: ${environment.surface}`,
-    `Platform: ${environment.platform}`,
-    `User agent: ${environment.userAgent}`,
     `Time: ${environment.time}`,
   ].join("\n");
-}
-
-function clientPlatform(bridge: DesktopBridge | undefined) {
-  try {
-    return bridge?.getClientPlatform() ?? navigator.platform;
-  } catch {
-    return navigator.platform;
-  }
 }
 
 function readEnvironment(bridge: DesktopBridge | undefined): BootErrorEnvironment {
@@ -137,8 +125,6 @@ function readEnvironment(bridge: DesktopBridge | undefined): BootErrorEnvironmen
     channel:
       import.meta.env.VITE_RELEASE_CHANNEL || /-(nightly|preview)\./.exec(version)?.[1] || "stable",
     surface: bridge ? "desktop" : "web",
-    platform: clientPlatform(bridge),
-    userAgent: navigator.userAgent,
     time: new Date().toISOString(),
   };
 }

@@ -184,7 +184,7 @@ function canRegisterRemoteLiveActivities(): boolean {
 }
 
 function canRegisterPushNotifications(): boolean {
-  return Platform.OS === "ios" || Platform.OS === "android";
+  return readRelayConfig() !== null && (Platform.OS === "ios" || Platform.OS === "android");
 }
 
 function shouldRegisterAgentAwarenessDeviceForProvider(

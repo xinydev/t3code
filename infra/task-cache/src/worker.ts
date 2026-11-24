@@ -1,5 +1,3 @@
-import * as Axiom from "@alchemy.run/axiom";
-import { Observability } from "./observability.ts";
 import * as Cloudflare from "@alchemy.run/cloudflare";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
@@ -82,7 +80,7 @@ export const layer = Worker.make(
     );
     yield* Cloudflare.Workers.cron("0 * * * *", () =>
       Savings.Savings.pipe(
-        Effect.flatMap((savings) => savings.cleanup.pipe(Effect.andThen(savings.emitTotals()))),
+        Effect.flatMap((savings) => savings.cleanup),
         Effect.provide(savingsLayer),
         Effect.orDie,
       ),
@@ -90,7 +88,11 @@ export const layer = Worker.make(
     return {
       fetch: Effect.gen(function* () {
         const request = yield* Cloudflare.Workers.Request;
-        if (new URL(request.url).pathname.startsWith(NativeClients.routePrefix)) {
+        const pathname = new URL(request.url).pathname;
+        if (pathname === "/projects/t3code/telemetry") {
+          return HttpServerResponse.empty({ status: 410 });
+        }
+        if (pathname.startsWith(NativeClients.routePrefix)) {
           const native = yield* NativeClients.NativeClients.pipe(Effect.provide(nativeRuntime));
           return HttpServerResponse.fromWeb(yield* native.handle(request));
         }
@@ -105,11 +107,6 @@ export const layer = Worker.make(
       Cloudflare.R2.ReadWriteBucketBinding,
       Cloudflare.Workers.RateLimitBinding,
       Cloudflare.Workers.CronEventSourceLive,
-      Layer.unwrap(
-        Effect.map(Observability, ({ traces, token }) =>
-          Axiom.Telemetry({ serviceName: "t3-task-cache", traces, token }),
-        ),
-      ),
     ]),
   ),
 );

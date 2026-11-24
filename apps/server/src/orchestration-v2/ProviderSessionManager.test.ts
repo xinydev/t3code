@@ -45,6 +45,7 @@ import * as ProjectService from "../project/ProjectService.ts";
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as McpSessionRegistry from "../mcp/McpSessionRegistry.ts";
+import { t3ProviderIntegrationsEnabled } from "../provider/t3ProviderIntegrations.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import {
@@ -653,6 +654,7 @@ function layerTest(input: {
   readonly state: Ref.Ref<TestProviderRuntimeState>;
   readonly idleTimeoutMs?: number;
   readonly maxIdlePinMs?: number;
+  readonly configureMcp?: ProviderSessionManager.ProviderSessionManagerV2LayerOptions["configureMcp"];
   readonly failEventStream?: boolean;
   readonly normalizeThreadLoadModelSelection?: (selection: ModelSelection) => ModelSelection;
   readonly capabilities?: OrchestrationV2ProviderCapabilities;
@@ -773,6 +775,7 @@ function layerTest(input: {
     ProviderSessionManager.layerWithOptions({
       ...(input.idleTimeoutMs === undefined ? {} : { idleTimeoutMs: input.idleTimeoutMs }),
       ...(input.maxIdlePinMs === undefined ? {} : { maxIdlePinMs: input.maxIdlePinMs }),
+      ...(input.configureMcp === undefined ? {} : { configureMcp: input.configureMcp }),
     }).pipe(
       Layer.provide(
         Layer.mergeAll(
@@ -2691,9 +2694,9 @@ it("ProviderSessionManagerV2 counts a delegated task as a wake only while its re
   );
 });
 
-it.effect(
-  "ProviderSessionManagerV2 issues MCP credentials before opening and revokes them on close",
-  () =>
+it.effect.each([true, false])(
+  "ProviderSessionManagerV2 prepares MCP credentials when enabled (%s)",
+  (enabled) =>
     Effect.gen(function* () {
       const state = yield* Ref.make(emptyState);
       const mcpConfigs = yield* Ref.make<
@@ -2723,6 +2726,12 @@ it.effect(
         });
 
         const captured = (yield* Ref.get(mcpConfigs))[0];
+        if (!enabled) {
+          assert.deepEqual(yield* Ref.get(mcpConfigs), [undefined]);
+          assert.isUndefined(yield* mcpSessions.read(threadId));
+          yield* manager.close(providerSessionId);
+          return;
+        }
         assert.isDefined(captured);
         assert.equal(captured?.threadId, threadId);
         assert.equal(captured?.providerInstanceId, modelSelection.instanceId);
@@ -2749,6 +2758,7 @@ it.effect(
             state,
             idleTimeoutMs: 1_000,
             mcpConfigs,
+            ...(enabled ? {} : { configureMcp: t3ProviderIntegrationsEnabled }),
           }),
         ),
       );

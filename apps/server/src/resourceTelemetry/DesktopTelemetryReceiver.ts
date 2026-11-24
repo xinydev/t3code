@@ -419,7 +419,9 @@ export const makeDesktopShellEnvironmentUpdates = Effect.fn(
 });
 
 /** @public */
-export const make = Effect.fn("resourceTelemetry.desktopTelemetryReceiver.make")(function* () {
+export const make = Effect.fn("resourceTelemetry.desktopTelemetryReceiver.make")(function* (
+  collectResources = true,
+) {
   const config = yield* ServerConfig.ServerConfig;
   const environment = yield* HostProcess.Environment;
   const platform = yield* HostProcess.Platform;
@@ -531,7 +533,7 @@ export const make = Effect.fn("resourceTelemetry.desktopTelemetryReceiver.make")
       ),
     );
   };
-  if (config.desktopTelemetryControlFd !== undefined) {
+  if (collectResources && config.desktopTelemetryControlFd !== undefined) {
     const settingsChanges = yield* serverSettings.subscribeChanges;
     const settings = yield* serverSettings.getSettings;
     yield* sendHostPowerIntervals(settings).pipe(
@@ -631,6 +633,7 @@ export const make = Effect.fn("resourceTelemetry.desktopTelemetryReceiver.make")
           );
         }
 
+        if (!collectResources) return Effect.void;
         const sampledAt = DateTime.makeUnsafe(message.sampledAtUnixMs);
         return snapshotMutex.withPermits(1)(
           recordContact.pipe(
@@ -658,70 +661,71 @@ export const make = Effect.fn("resourceTelemetry.desktopTelemetryReceiver.make")
       Effect.forkScoped,
     );
 
-    yield* Effect.forever(
-      Effect.sleep(STALE_CHECK_INTERVAL).pipe(
-        Effect.andThen(
-          snapshotMutex.withPermits(1)(
-            Effect.gen(function* () {
-              const now = yield* DateTime.now;
-              const nowMs = DateTime.toEpochMillis(now);
-              const staleAfterMs = yield* Ref.get(snapshotStaleAfterMs);
-              const staleSnapshot = yield* Ref.modify(latest, (current) => {
-                if (
-                  Option.isNone(current) ||
-                  current.value.power.stale ||
-                  nowMs - current.value.sampledAtUnixMs < staleAfterMs
-                ) {
-                  return [Option.none<DesktopHostTelemetrySnapshot>(), current] as const;
-                }
-                const stale: DesktopHostTelemetrySnapshot = {
-                  ...current.value,
-                  power: { ...current.value.power, stale: true },
-                };
-                return [Option.some(stale), Option.some(stale)] as const;
-              });
-              if (Option.isNone(staleSnapshot)) {
-                const lastContact = yield* Ref.get(lastContactAtMs);
-                if (!isDesktopTelemetryContactStale(lastContact, nowMs)) return;
-                const staleMessage = new DesktopTelemetryStale({
-                  fd,
-                  staleAfterMs: INITIAL_SAMPLE_DEADLINE_MS,
-                }).message;
-                const changed = yield* Ref.modify(health, (current) => {
+    if (collectResources)
+      yield* Effect.forever(
+        Effect.sleep(STALE_CHECK_INTERVAL).pipe(
+          Effect.andThen(
+            snapshotMutex.withPermits(1)(
+              Effect.gen(function* () {
+                const now = yield* DateTime.now;
+                const nowMs = DateTime.toEpochMillis(now);
+                const staleAfterMs = yield* Ref.get(snapshotStaleAfterMs);
+                const staleSnapshot = yield* Ref.modify(latest, (current) => {
                   if (
-                    current.status === "stopped" ||
-                    Option.isSome(current.lastSampleAt) ||
-                    (current.status === "degraded" &&
-                      Option.contains(current.lastError, staleMessage))
+                    Option.isNone(current) ||
+                    current.value.power.stale ||
+                    nowMs - current.value.sampledAtUnixMs < staleAfterMs
                   ) {
-                    return [Option.none<DesktopTelemetryReceiverHealth>(), current] as const;
+                    return [Option.none<DesktopHostTelemetrySnapshot>(), current] as const;
                   }
-                  const next: DesktopTelemetryReceiverHealth = {
-                    ...current,
-                    status: "degraded",
-                    lastError: Option.some(staleMessage),
+                  const stale: DesktopHostTelemetrySnapshot = {
+                    ...current.value,
+                    power: { ...current.value.power, stale: true },
                   };
-                  return [Option.some(next), next] as const;
+                  return [Option.some(stale), Option.some(stale)] as const;
                 });
-                if (Option.isSome(changed)) {
-                  yield* PubSub.publish(healthChanges, changed.value);
+                if (Option.isNone(staleSnapshot)) {
+                  const lastContact = yield* Ref.get(lastContactAtMs);
+                  if (!isDesktopTelemetryContactStale(lastContact, nowMs)) return;
+                  const staleMessage = new DesktopTelemetryStale({
+                    fd,
+                    staleAfterMs: INITIAL_SAMPLE_DEADLINE_MS,
+                  }).message;
+                  const changed = yield* Ref.modify(health, (current) => {
+                    if (
+                      current.status === "stopped" ||
+                      Option.isSome(current.lastSampleAt) ||
+                      (current.status === "degraded" &&
+                        Option.contains(current.lastError, staleMessage))
+                    ) {
+                      return [Option.none<DesktopTelemetryReceiverHealth>(), current] as const;
+                    }
+                    const next: DesktopTelemetryReceiverHealth = {
+                      ...current,
+                      status: "degraded",
+                      lastError: Option.some(staleMessage),
+                    };
+                    return [Option.some(next), next] as const;
+                  });
+                  if (Option.isSome(changed)) {
+                    yield* PubSub.publish(healthChanges, changed.value);
+                  }
+                  return;
                 }
-                return;
-              }
-              yield* updateHealth((currentHealth) => ({
-                ...currentHealth,
-                status: currentHealth.status === "stopped" ? "stopped" : "degraded",
-                lastError:
-                  currentHealth.status === "stopped"
-                    ? currentHealth.lastError
-                    : Option.some(new DesktopTelemetryStale({ fd, staleAfterMs }).message),
-              }));
-              yield* PubSub.publish(changes, staleSnapshot.value);
-            }),
+                yield* updateHealth((currentHealth) => ({
+                  ...currentHealth,
+                  status: currentHealth.status === "stopped" ? "stopped" : "degraded",
+                  lastError:
+                    currentHealth.status === "stopped"
+                      ? currentHealth.lastError
+                      : Option.some(new DesktopTelemetryStale({ fd, staleAfterMs }).message),
+                }));
+                yield* PubSub.publish(changes, staleSnapshot.value);
+              }),
+            ),
           ),
         ),
-      ),
-    ).pipe(Effect.forkScoped);
+      ).pipe(Effect.forkScoped);
   }
 
   return DesktopTelemetryReceiver.of({
@@ -776,6 +780,7 @@ export const make = Effect.fn("resourceTelemetry.desktopTelemetryReceiver.make")
 });
 
 export const layer = Layer.effect(DesktopTelemetryReceiver, make());
+export const layerWithoutResourceCollection = Layer.effect(DesktopTelemetryReceiver, make(false));
 
 export const layerTest = (
   overrides: Partial<DesktopTelemetryReceiver["Service"]> = {},

@@ -2,7 +2,6 @@ import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import type { ChangeRequestTerminology } from "@t3tools/client-runtime/source-control-clients";
 import type { PullRequestActor } from "@t3tools/contracts";
 import IconAlertTriangle from "@tabler/icons-react-native/IconAlertTriangle";
-import { Image } from "expo-image";
 import { useGT } from "gt-react-native";
 import { View } from "react-native";
 import { useResolveClassNames } from "uniwind";
@@ -52,15 +51,7 @@ export function PullRequestAvatar(props: {
   readonly size?: number;
 }) {
   const size = props.size ?? 24;
-  return props.actor?.avatarUrl ? (
-    <Image
-      source={{ uri: props.actor.avatarUrl }}
-      recyclingKey={props.actor.avatarUrl}
-      accessibilityLabel={props.actor.login}
-      style={{ width: size, height: size, borderRadius: size / 2 }}
-      cachePolicy="memory-disk"
-    />
-  ) : (
+  return (
     <View
       className="items-center justify-center rounded-full bg-grouped-card"
       style={{ width: size, height: size }}

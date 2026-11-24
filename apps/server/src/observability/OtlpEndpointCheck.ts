@@ -87,3 +87,9 @@ const make = Effect.gen(function* () {
 });
 
 export const layer = Layer.effect(OtlpEndpointCheck, make);
+
+export const layerDisabled = Layer.succeed(OtlpEndpointCheck, {
+  check: Effect.fn("OtlpEndpointCheck.check")(() =>
+    Effect.succeed({ _tag: "Unreachable" as const, timedOut: false }),
+  ),
+});

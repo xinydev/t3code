@@ -46,6 +46,7 @@ import * as EnvironmentAuthPolicy from "./EnvironmentAuthPolicy.ts";
 import * as PairingGrantStore from "./PairingGrantStore.ts";
 import * as ServerSecretStore from "./ServerSecretStore.ts";
 import * as SessionStore from "./SessionStore.ts";
+import type { AuthRequestClientMetadata } from "./utils.ts";
 import { REUSABLE_DEV_SESSION_EXPIRES_AT, resolveReusableDevAuth } from "./ReusableDevAuth.ts";
 import { verifyRequestDpopProof } from "./dpop.ts";
 import { DESKTOP_RENDERER_ORIGINS } from "../httpCors.ts";
@@ -60,6 +61,13 @@ import { requestUrl } from "../requestUrl.ts";
 
 const DEFAULT_SESSION_SUBJECT = "cli-issued-session";
 export const INTERNAL_ADMINISTRATIVE_BOOTSTRAP_SUBJECT = "administrative-bootstrap";
+const REMOTE_ADMINISTRATIVE_SESSION_SUBJECT = "administrative-bootstrap-remote";
+
+function pairedSessionSubject(subject: string, client: AuthRequestClientMetadata): string {
+  return subject === INTERNAL_ADMINISTRATIVE_BOOTSTRAP_SUBJECT && client.remoteConnection === true
+    ? REMOTE_ADMINISTRATIVE_SESSION_SUBJECT
+    : subject;
+}
 /** Sessions and pairing links T3 Connect minted for a device signed in to the linked account. */
 export const CLOUD_CONNECT_SUBJECT = "cloud-connect";
 
@@ -508,7 +516,7 @@ export class EnvironmentAuth extends Context.Service<
     ) => Effect.Effect<AuthSessionState, ServerAuthInternalError>;
     readonly createBrowserSession: (
       credential: string,
-      requestMetadata: AuthClientMetadata,
+      requestMetadata: AuthRequestClientMetadata,
       previousSessionToken?: string,
     ) => Effect.Effect<
       {
@@ -522,7 +530,7 @@ export class EnvironmentAuth extends Context.Service<
     readonly exchangeBootstrapCredentialForAccessToken: (
       credential: string,
       requestedScopes: ReadonlyArray<AuthEnvironmentScope> | undefined,
-      requestMetadata: AuthClientMetadata,
+      requestMetadata: AuthRequestClientMetadata,
       input?: {
         readonly proofKeyThumbprint?: string;
       },
@@ -1020,7 +1028,7 @@ export const make = Effect.gen(function* () {
       sessions
         .issue({
           method: "browser-session-cookie",
-          subject: grant.subject,
+          subject: pairedSessionSubject(grant.subject, requestMetadata),
           scopes: grant.scopes,
           ...(previousSession?.method === "browser-session-cookie"
             ? { replaceSessionId: previousSession.sessionId }
@@ -1175,7 +1183,7 @@ export const make = Effect.gen(function* () {
               const issue = sessions
                 .issue({
                   method: input?.proofKeyThumbprint ? "dpop-access-token" : "bearer-access-token",
-                  subject: grant.subject,
+                  subject: pairedSessionSubject(grant.subject, requestMetadata),
                   scopes: grantedScopes,
                   ...(input?.proofKeyThumbprint
                     ? {
@@ -1481,6 +1489,10 @@ export const make = Effect.gen(function* () {
       Effect.map((clientSessions) =>
         clientSessions.map((clientSession): AuthClientSession => ({
           ...clientSession,
+          client: {
+            ...(clientSession.client.label ? { label: clientSession.client.label } : {}),
+            deviceType: "unknown",
+          },
           ...authScopeResponse(clientSession.scopes),
           current: clientSession.sessionId === currentSessionId,
         })),
@@ -1832,7 +1844,10 @@ const revokePairedClientsThePolicyDisallows = Effect.fn(
 ) {
   const remoteAllowed = ManagedLimits.allowsRemoteClients(policy);
   const disallowed = new Set<string>();
-  if (!remoteAllowed) disallowed.add(LINK_PAIRED_SUBJECTS.link);
+  if (!remoteAllowed) {
+    disallowed.add(LINK_PAIRED_SUBJECTS.link);
+    disallowed.add(REMOTE_ADMINISTRATIVE_SESSION_SUBJECT);
+  }
   if (!ManagedLimits.allowsConnect(policy)) disallowed.add(LINK_PAIRED_SUBJECTS.connect);
   if (disallowed.size === 0) return;
   const sessions = (yield* stores.sessions.listActive()).filter(

@@ -684,7 +684,7 @@ const CLIPBOARD_SCRIPT = `(() => {
   };
 })();`;
 
-const make = Effect.gen(function* () {
+const make = Effect.fnUntraced(function* (profileReporting: boolean) {
   const config = yield* ServerConfig.ServerConfig;
   const host = { platform: yield* HostProcess.Platform, arch: yield* HostProcess.Architecture };
   const manager = yield* PreviewManager.PreviewManager;
@@ -2062,7 +2062,7 @@ const make = Effect.gen(function* () {
   );
   const fileServices = yield* Effect.context<FileSystem.FileSystem | Path.Path>();
   const saveProfilesLock = yield* Semaphore.make(1);
-  let savedProfiles = yield* (yield* FileSystem.FileSystem).readFileString(savedProfilesPath).pipe(
+  const loadProfiles = (yield* FileSystem.FileSystem).readFileString(savedProfilesPath).pipe(
     Effect.tapError((cause) =>
       cause.reason._tag === "NotFound"
         ? Effect.void
@@ -2073,6 +2073,7 @@ const make = Effect.gen(function* () {
     ),
     Effect.orElseSucceed(() => ""),
   );
+  let savedProfiles = profileReporting ? yield* loadProfiles : "";
   const reportsByClient = new Map<number, PreviewReportProfilesInput>();
   let nextClient = 0;
   let reportedProfiles: {
@@ -2134,7 +2135,7 @@ const make = Effect.gen(function* () {
     );
   }, saveProfilesLock.withPermits(1));
 
-  const profileReporter: ServerBrowser["Service"]["profileReporter"] = Effect.acquireRelease(
+  const receiveProfiles: ServerBrowser["Service"]["profileReporter"] = Effect.acquireRelease(
     Effect.sync(() => nextClient++),
     (client) =>
       Effect.sync(() => {
@@ -3799,10 +3800,11 @@ const make = Effect.gen(function* () {
   return ServerBrowser.of({
     attachViewer,
     clearProfile,
-    profileReporter,
+    profileReporter: profileReporting ? receiveProfiles : Effect.succeed(() => Effect.void),
     openDownload,
     answerFileChooser,
   });
 });
 
-export const layer = Layer.effect(ServerBrowser, make);
+export const layer = Layer.effect(ServerBrowser, make(true));
+export const layerWithoutProfileReporting = Layer.effect(ServerBrowser, make(false));

@@ -269,6 +269,7 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
     readonly startupPresentation?: ServerConfig.StartupPresentation;
     readonly forceAutoBootstrapProjectFromCwd?: boolean;
     readonly rejectRunningServer?: boolean;
+    readonly disableOtlp?: boolean;
     readonly selectAutomaticPort?: (
       preferred: number,
       host: string | undefined,
@@ -455,7 +456,10 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
   );
   const logLevel = Option.getOrElse(cliLogLevel, () => env.logLevel);
 
-  const otel = yield* OtelEnvironment.load;
+  const otel =
+    options?.disableOtlp === true
+      ? { ...OtelEnvironment.none, disabled: true }
+      : yield* OtelEnvironment.load;
 
   const signalExport: SignalExport = {
     protocol: env.otlpProtocol,

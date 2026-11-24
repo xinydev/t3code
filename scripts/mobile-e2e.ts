@@ -229,7 +229,13 @@ async function main() {
         cwd: NodePath.join(REPO_ROOT, "apps/mobile"),
         // Lazily fetched chunks (dynamic import()) sometimes arrive broken on the pool's Android
         // emulators and throw SyntaxErrors; release builds have no lazy chunks either.
-        env: { ...NodeProcess.env, APP_VARIANT: "development", CI: "1", EXPO_NO_METRO_LAZY: "1" },
+        env: {
+          ...NodeProcess.env,
+          APP_VARIANT: "development",
+          CI: "1",
+          EXPO_NO_METRO_LAZY: "1",
+          EXPO_NO_TELEMETRY: "1",
+        },
         // The app's console output arrives through Metro; keep it with the run.
         stdio: [
           "ignore",

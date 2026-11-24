@@ -4,7 +4,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import { afterEach, describe, expect, it } from "vite-plus/test";
 
-import { loadRepoEnv } from "./public-config.ts";
+import { loadLocalRepoEnv, loadRepoEnv } from "./public-config.ts";
 
 const temporaryDirectories: string[] = [];
 
@@ -51,6 +51,25 @@ describe("loadRepoEnv", () => {
       VITE_T3CODE_RELAY_URL: "https://ci.example.test",
     });
   });
+});
+
+it("omits relay, login and trace configuration even when supplied by the build environment", () => {
+  const repoRoot = makeTemporaryDirectory();
+  NodeFS.writeFileSync(
+    NodePath.join(repoRoot, ".env"),
+    "T3CODE_RELAY_URL=https://relay.example.test\nT3CODE_CLERK_PUBLISHABLE_KEY=pk_local\n",
+  );
+  expect(
+    loadLocalRepoEnv({
+      repoRoot,
+      baseEnv: {
+        VITE_RELAY_OTLP_TRACES_TOKEN: "token",
+        T3CODE_MOBILE_OTLP_TRACES_DATASET: "dataset",
+        EXPO_PUBLIC_CLERK_GOOGLE_IOS_CLIENT_ID: "client",
+        APP_VERSION: "1.2.3+local.1",
+      },
+    }),
+  ).toEqual({ APP_VERSION: "1.2.3+local.1" });
 });
 
 function makeTemporaryDirectory() {

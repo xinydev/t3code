@@ -253,6 +253,8 @@ function createMcpClient(endpoint: string, token: string) {
 }
 
 export default async function t3McpExtension(pi: ExtensionAPI) {
+  const endpoint = env(URL_ENV);
+  const token = env(TOKEN_ENV);
   // RPC has no trust prompt, so Pi skips an untrusted folder's protected resources. Session
   // replacement reruns this factory without project_trust, and T3 drops notices outside a turn,
   // so check each session's first turn. An explicit --no-approve is deliberate and stays quiet.
@@ -270,7 +272,7 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
   // Keep skill chips in the request. Pi expands only one leading /skill:
   // command, so use its own frontmatter loader for every selected chip here.
   pi.on("input", async (event, ctx) => {
-    if (!event.text.includes("$")) return;
+    if (endpoint === undefined || token === undefined || !event.text.includes("$")) return;
     const commands = pi.getCommands().filter((command) => command.source === "skill");
     const nativeSkill = /^\\/skill:([^ ]+)(?: |$)/.exec(event.text)?.[1];
     const seen = new Set<string>(nativeSkill === undefined ? [] : [nativeSkill]);
@@ -381,17 +383,7 @@ export default async function t3McpExtension(pi: ExtensionAPI) {
     }
   });
 
-  const endpoint = env(URL_ENV);
-  const token = env(TOKEN_ENV);
-  if (endpoint === undefined || token === undefined) {
-    pi.on("session_start", async (_event, ctx) => {
-      ctx.ui.notify(
-        "t3-code MCP unavailable: T3_MCP_URL or T3_MCP_BEARER_TOKEN is missing.",
-        "warning",
-      );
-    });
-    return;
-  }
+  if (endpoint === undefined || token === undefined) return;
 
   // Tool exposure arrived with registerMcpServer in Pi 0.99. Keep the HTTP
   // bridge as the credential owner: mcp.json overrides native registrations.

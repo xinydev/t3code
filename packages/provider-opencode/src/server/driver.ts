@@ -624,13 +624,13 @@ export const OpenCodeDriver: ProviderDriver<
           Effect.annotateLogs({ providerInstanceId: instanceId }),
           Effect.annotateSpans({ providerInstanceId: instanceId }),
         ),
-        usageLimits: checkUsageLimits,
+        usageLimits: host.allowOptionalProviderRequests === false ? Effect.void : checkUsageLimits,
       },
       { concurrency: "unbounded" },
     ).pipe(
       Effect.map(({ provider, usageLimits, installedVersion }) => ({
         ...provider,
-        usageLimits,
+        ...(usageLimits === undefined ? {} : { usageLimits }),
         ...(installedVersion === undefined ? {} : { installedVersion }),
       })),
       Effect.map(stampIdentity),

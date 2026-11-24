@@ -3,105 +3,37 @@ import { describe, expect, it } from "vite-plus/test";
 import { deriveAuthClientMetadata, resolveSessionCookieName } from "./utils.ts";
 
 describe("deriveAuthClientMetadata", () => {
-  it("labels Electron user agents as Electron instead of Chrome", () => {
+  it("keeps only the label and the remote classification", () => {
     const metadata = deriveAuthClientMetadata({
       request: {
         headers: {
-          "user-agent":
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) t3code/0.0.15 Chrome/136.0.7103.93 Electron/36.3.2 Safari/537.36",
+          "user-agent": "Mozilla/5.0 (Macintosh) Chrome/136.0.7103.93 Electron/36.3.2",
+          "x-forwarded-for": "100.64.0.2",
         },
-        source: {
-          remoteAddress: "::ffff:127.0.0.1",
-        },
+        source: { remoteAddress: "::ffff:127.0.0.1" },
       } as never,
+      presented: { label: "T3 Code Mobile", deviceType: "mobile", os: "iOS" },
     });
 
-    expect(metadata).toMatchObject({
-      browser: "Electron",
-      deviceType: "desktop",
-      ipAddress: "127.0.0.1",
-      os: "macOS",
+    expect(metadata).toEqual({
+      label: "T3 Code Mobile",
+      deviceType: "unknown",
+      remoteConnection: true,
     });
   });
 
-  it("records the forwarded client address of a request proxied by Tailscale Serve", () => {
-    const metadata = deriveAuthClientMetadata({
-      request: {
-        headers: {
-          "x-forwarded-for": "100.64.0.2",
-          "x-forwarded-host": "host-a.tailnet-name.ts.net",
-          "x-forwarded-proto": "https",
-        },
-        source: { remoteAddress: "127.0.0.1" },
-      } as never,
+  it("keeps loopback pairing local and ignores proxy headers from a direct remote peer", () => {
+    const local = deriveAuthClientMetadata({
+      request: { headers: {}, source: { remoteAddress: "127.0.0.1" } } as never,
     });
-
-    expect(metadata.ipAddress).toBe("100.64.0.2");
-
-    const direct = deriveAuthClientMetadata({
+    const remote = deriveAuthClientMetadata({
       request: {
-        headers: { "x-forwarded-for": "100.64.0.2" },
+        headers: { "x-forwarded-for": "127.0.0.1" },
         source: { remoteAddress: "192.168.1.20" },
       } as never,
     });
-    expect(direct.ipAddress).toBe("192.168.1.20");
-  });
-
-  it.each([
-    [
-      "Edge on Android",
-      "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Mobile Safari/537.36 EdgA/129.0.0.0",
-      "Edge",
-    ],
-    [
-      "Edge on iOS",
-      "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 EdgiOS/129.0.2792.84 Mobile/15E148 Safari/605.1.15",
-      "Edge",
-    ],
-    [
-      "Firefox on iOS",
-      "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) FxiOS/131.0 Mobile/15E148 Safari/605.1.15",
-      "Firefox",
-    ],
-    [
-      "Opera on iOS",
-      "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 OPiOS/5.0.0 Mobile/15E148 Safari/605.1.15",
-      "Opera",
-    ],
-  ])("labels %s by its own browser token", (_name, userAgent, browser) => {
-    const metadata = deriveAuthClientMetadata({
-      request: { headers: { "user-agent": userAgent }, source: {} } as never,
-    });
-
-    expect(metadata.browser).toBe(browser);
-  });
-
-  it("applies client-presented display identity without replacing transport metadata", () => {
-    const metadata = deriveAuthClientMetadata({
-      request: {
-        headers: {
-          "user-agent":
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/136.0.7103.93 Electron/36.3.2 Safari/537.36",
-        },
-        source: {
-          remoteAddress: "::ffff:192.168.213.72",
-        },
-      } as never,
-      presented: {
-        label: "T3 Code Mobile",
-        deviceType: "mobile",
-        os: "iOS",
-      },
-    });
-
-    expect(metadata).toMatchObject({
-      label: "T3 Code Mobile",
-      browser: "Electron",
-      deviceType: "mobile",
-      ipAddress: "192.168.213.72",
-      os: "iOS",
-    });
-    expect(metadata.userAgent).toContain("Electron/36.3.2");
+    expect(local).toEqual({ deviceType: "unknown" });
+    expect(remote).toEqual({ deviceType: "unknown", remoteConnection: true });
   });
 });
 

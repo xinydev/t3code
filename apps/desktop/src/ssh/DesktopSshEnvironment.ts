@@ -93,7 +93,7 @@ export const resolveDesktopSshCliRunner = (
   const releaseBaseUrl = env[CLI_RELEASE_BASE_URL_ENV]?.trim() || undefined;
   return {
     archiveVersion: environment.appVersion,
-    ...(releaseBaseUrl === undefined ? {} : { releaseBaseUrl }),
+    ...(releaseBaseUrl === undefined ? { allowArchiveDownload: false } : { releaseBaseUrl }),
   };
 };
 

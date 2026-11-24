@@ -464,6 +464,18 @@ export const make = Effect.gen(function* () {
 
 export const layer = Layer.effect(TraceDiagnostics, make);
 
+export const layerDisabled = Layer.succeed(TraceDiagnostics, {
+  read: Effect.fnUntraced(function* () {
+    return makeEmptyDiagnostics({
+      traceFilePath: "disabled",
+      scannedFilePaths: [],
+      readAt: yield* DateTime.now,
+      slowSpanThresholdMs: DEFAULT_SLOW_SPAN_THRESHOLD_MS,
+      error: { kind: "trace-file-not-found", message: "Trace collection is disabled." },
+    });
+  }),
+});
+
 export const readTraceDiagnostics = Effect.fn("TraceDiagnostics.readTraceDiagnostics")(function* (
   options: TraceDiagnosticsOptions,
 ): Effect.fn.Return<ServerTraceDiagnosticsResult, never, TraceDiagnostics> {

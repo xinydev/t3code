@@ -389,3 +389,9 @@ export const make = Effect.gen(function* () {
 });
 
 export const layer = Layer.effect(AnalyticsService, make);
+
+export const layerDisabled = Layer.succeed(AnalyticsService, {
+  record: Effect.fn("AnalyticsService.record")(() => Effect.succeed(false)),
+  recordOwners: Effect.fn("AnalyticsService.recordOwners")(() => Effect.void),
+  flush: Effect.void,
+});

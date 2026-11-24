@@ -1,5 +1,8 @@
 # Shared Vite Task cache
 
+This checkout disables cache setup and telemetry. Its Worker returns HTTP 410 for telemetry and
+exports no data to Axiom. The remaining setup and telemetry details describe the upstream cache.
+
 [Alchemy](https://alchemy.run) manages the `T3TaskCache` stack: the `t3-task-cache` Worker, its D1 index, private R2 bucket, rate limits, and cleanup schedule. The production stack adopts the existing resources and preserves their data and repository authorization policy. D1 and R2 have a retain removal policy.
 
 The Worker uses Effect services for request handling, developer authentication, bounded concurrency, deadlines, and cleanup. The pinned [upstream protocol package](https://github.com/voidzero-dev/vite-plus-remote-cache-cloudflare/tree/5b06c2c10d84ea441735ba07c46f6d1b7cb2ff3b) supplies the experimental wire format, streaming upload, GitHub OIDC validation, and atomic D1 publication. Keeping that adapter preserves compatibility with existing cache entries.
@@ -12,7 +15,7 @@ Install dependencies with `vp install`, then authenticate with Alchemy's Cloudfl
 
 ```sh
 cd infra/task-cache
-alchemy deploy --stage prod
+vp run deploy
 ```
 
 The stack reads read-only credential digests from `~/.config/t3-task-cache/readers.json` (or `READER_KEYS`) and writer digests from `~/.config/t3-task-cache/writers.json` and supplies them as a redacted Worker secret. Preserve that file to administer existing writers. Deployment uses the `prod` stage and the existing endpoint in `.task-cache.json`. The upstream protocol is loaded only inside the Worker runtime and bundled by Alchemy, so deployment runs on Node without an extra TypeScript loader. An explicit `DEVELOPER_KEYS` environment variable overrides the local registry, including on deployment hosts without that file. Deployment fails when neither source exists, so a missing local file cannot silently revoke existing writers.
@@ -27,7 +30,7 @@ The CI read identity is named `ci-reader`. Its raw token belongs in the GitHub r
 node infra/task-cache/scripts/manage.ts add-writer maria
 ```
 
-This updates the local writer registry and writes `~/.config/t3-task-cache/maria.json`. Run `alchemy deploy --stage prod` from `infra/task-cache` to apply the registry, then transfer that file through a private channel. The recipient runs:
+This updates the local writer registry and writes `~/.config/t3-task-cache/maria.json`. Run `vp run deploy` from `infra/task-cache` to apply the registry, then transfer that file through a private channel. The recipient runs:
 
 ```sh
 bash infra/task-cache/install.sh

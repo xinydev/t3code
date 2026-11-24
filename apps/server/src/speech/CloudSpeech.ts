@@ -6,7 +6,7 @@ import {
   SettingsSecretValue,
   isSecretReference,
   type SecretReference,
-  type ServerSettingsError,
+  ServerSettingsError,
   type CloudSpeechKeys,
   type CloudSpeechProvider,
   EnvironmentSpeechTranscriptionResult,
@@ -21,6 +21,7 @@ import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
+import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import { requireSettingsSecret } from "../secrets/settingsSecretValue.ts";
 import { applySpeechAliases, speechRecognitionWords } from "./customWords.ts";
@@ -122,6 +123,29 @@ export class CloudSpeech extends Context.Service<
     ) => Effect.Effect<string, CloudSpeechError | SpeechInvalidAudioError | ServerSettingsError>;
   }
 >()("t3/speech/CloudSpeech") {}
+
+export const layerDisabled = Layer.effect(
+  CloudSpeech,
+  Effect.map(ServerConfig.ServerConfig, ({ settingsPath }) =>
+    CloudSpeech.of({
+      configured: Effect.succeed({ openai: false, xai: false, openrouter: false }),
+      models: Effect.succeed([]),
+      setKey: Effect.fn("CloudSpeech.setKey")(() =>
+        Effect.fail(
+          new ServerSettingsError({
+            settingsPath,
+            operation: "write-managed-setting",
+            managedSetting: "cloudSpeechCredentials",
+            managedBy: "this build",
+          }),
+        ),
+      ),
+      transcribe: Effect.fn("CloudSpeech.transcribe")((provider) =>
+        Effect.fail(new CloudSpeechError({ provider, reason: "unavailable" })),
+      ),
+    }),
+  ),
+);
 
 export const layer = Layer.effect(
   CloudSpeech,

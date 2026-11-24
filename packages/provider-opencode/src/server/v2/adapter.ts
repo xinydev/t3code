@@ -846,6 +846,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
   const continuationRequests = yield* ProviderContinuationRequests.ProviderContinuationRequests;
   const crypto = yield* Digest.Digest;
   const driver = OPENCODE_PROVIDER;
+  const t3IntegrationsEnabled = host.t3ProviderIntegrationsEnabled?.(driver) !== false;
   let nativeGoalSupport: boolean | undefined;
   const mcpServerNameFor = (threadId: string) =>
     t3McpServerName(threadId).pipe(Effect.provideService(Digest.Digest, crypto));
@@ -4496,20 +4497,25 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
           yield* Effect.sleep(MCP_TOOL_RELOAD_SETTLE);
         }
       }
-      const instructions = [
-        buildRuntimeInstructions({
-          agentFeedback: mcpAvailable ? (turnInput.agentFeedback ?? "off") : "off",
-          harness: "OpenCode",
-          model: turnInput.modelSelection.model,
-          runtimePolicy: turnInput.runtimePolicy,
-        }),
-        t3OrchestrationSystemPrompt(mcpAvailable, mcpSession?.capabilities?.has("device") === true),
-        mcpAvailable
-          ? "To wait for a background shell you started (tests, a build), call `t3_background_wait` with its shell ID before you end your turn. Do not mark work you leave running, or PRs."
-          : undefined,
-      ]
-        .filter((part) => part !== undefined && part.length > 0)
-        .join("\n\n");
+      const instructions = t3IntegrationsEnabled
+        ? [
+            buildRuntimeInstructions({
+              agentFeedback: mcpAvailable ? (turnInput.agentFeedback ?? "off") : "off",
+              harness: "OpenCode",
+              model: turnInput.modelSelection.model,
+              runtimePolicy: turnInput.runtimePolicy,
+            }),
+            t3OrchestrationSystemPrompt(
+              mcpAvailable,
+              mcpSession?.capabilities?.has("device") === true,
+            ),
+            mcpAvailable
+              ? "To wait for a background shell you started (tests, a build), call `t3_background_wait` with its shell ID before you end your turn. Do not mark work you leave running, or PRs."
+              : undefined,
+          ]
+            .filter((part) => part !== undefined && part.length > 0)
+            .join("\n\n")
+        : "";
       if (instructions !== state.instructions) {
         yield* client.session.instructions.entry.put({
           sessionID: Session.ID.make(sessionId),

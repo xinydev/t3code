@@ -199,6 +199,11 @@ const labelOverride = Config.String("T3CODE_ENVIRONMENT_LABEL").pipe(
   Config.map(Option.flatMap((label) => Option.fromNullishOr(normalizeLabel(label)))),
 );
 
+export const configuredEnvironmentLabel = labelOverride.pipe(
+  Effect.orElseSucceed(() => Option.none<string>()),
+  Effect.map(Option.getOrElse(() => "T3 environment")),
+);
+
 export const resolveServerEnvironmentLabel = Effect.fn("resolveServerEnvironmentLabel")(function* (
   input: ResolveServerEnvironmentLabelInput,
 ) {

@@ -33,6 +33,7 @@ import {
   scopeClaudeModelCatalog,
 } from "../provider/ClaudeModelCatalog.ts";
 import {
+  CLAUDE_REPORTING_DISABLED_ENV,
   hasClaudeManagedMcpConfig,
   makeClaudeEnvironment,
 } from "../provider/Drivers/ClaudeHome.ts";
@@ -276,7 +277,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
         (cause) => new TextGenerationError({ operation, detail: cause.message, cause }),
       ),
     );
-    const settings = {
+    const settings: Record<string, unknown> = {
       ...(investigate
         ? investigationSettings(
             yield* readClaudeUserSettings(claudeSettings, workingDirectory, claudeEnvironment).pipe(
@@ -291,9 +292,16 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       ...(fastMode ? { fastMode: true } : {}),
       ...(typeof ultracode === "boolean" ? { ultracode } : {}),
     };
+    const env = settings.env;
     const settingsJson = yield* encodeJsonForOperation(
       operation,
-      settings,
+      {
+        ...settings,
+        env: {
+          ...(typeof env === "object" && env !== null ? env : {}),
+          ...CLAUDE_REPORTING_DISABLED_ENV,
+        },
+      },
       "Failed to encode Claude CLI settings.",
     );
     // The user's settings can hold credentials; a file keeps them out of the process list.

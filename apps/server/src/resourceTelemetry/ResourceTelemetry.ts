@@ -478,3 +478,70 @@ export const make = Effect.fn("resourceTelemetry.resourceTelemetry.make")(functi
 });
 
 export const layer = Layer.effect(ResourceTelemetry, make());
+
+export const layerDisabled = Layer.effect(
+  ResourceTelemetry,
+  Effect.gen(function* () {
+    const readAt = yield* DateTime.now;
+    const noSamples = {
+      status: "unavailable" as const,
+      lastSampleAt: Option.none<DateTime.Utc>(),
+      lastError: Option.some("Resource collection is disabled."),
+    };
+    const health: ResourceTelemetryHealth = {
+      native: noSamples,
+      desktop: noSamples,
+      sidecarVersion: Option.none(),
+      sidecarPid: Option.none(),
+      restartCount: 0,
+      collectionDurationMicros: 0,
+      scannedProcessCount: 0,
+      retainedProcessCount: 0,
+      inaccessibleProcessCount: 0,
+    };
+    const empty = mergeProcesses({
+      serverPid: 0,
+      sidecarPid: Option.none(),
+      fallbackSampledAtMs: DateTime.toEpochMillis(readAt),
+      nativeSnapshot: Option.none(),
+      desktopSnapshot: Option.none(),
+      previous: new Map(),
+      counters: emptyTelemetryCounters(),
+      updatePrevious: false,
+    });
+    const snapshot: ResourceTelemetrySnapshot = {
+      readAt,
+      sampleIntervalMs: 0,
+      processes: [],
+      groups: empty.groups,
+      power: unknownPower(readAt),
+      speedLimitPercent: Option.none(),
+      attribution: { readAt, entries: [] },
+      health,
+    };
+    return ResourceTelemetry.of({
+      latest: Effect.succeed(snapshot),
+      changes: Stream.empty,
+      subscribe: Effect.succeed({ latest: snapshot, changes: Stream.empty }),
+      readHistory: Effect.fnUntraced(function* (input) {
+        return buildResourceTelemetryHistory({
+          ...normalizeResourceTelemetryHistoryInput(input),
+          readAt: yield* DateTime.now,
+          sampleIntervalMs: 0,
+          serverPid: 0,
+          sidecarPid: Option.none(),
+          desktopSnapshot: Option.none(),
+          snapshots: [],
+          health,
+        });
+      }),
+      refresh: Effect.fail(
+        new ResourceTelemetryRefreshFailed({
+          operation: "refresh",
+          cause: "Resource collection is disabled.",
+        }),
+      ),
+      retry: Effect.succeed({ accepted: false, snapshot }),
+    });
+  }),
+);

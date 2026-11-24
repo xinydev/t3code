@@ -31,6 +31,7 @@ type InputHook = (
 async function loadHooks(
   commands: ReadonlyArray<SkillCommand> = [],
   argv: ReadonlyArray<string> = [],
+  env: NodeJS.ProcessEnv = {},
 ) {
   const handlers = new Map<string, unknown>();
   const source = NodeModule.stripTypeScriptTypes(
@@ -40,7 +41,7 @@ async function loadHooks(
     ),
   );
   await NodeVM.runInNewContext(`${source}\nt3McpExtension(pi)`, {
-    process: { env: {}, argv },
+    process: { env, argv },
     NodeFSP,
     NodePath,
     stripFrontmatter: (content: string) => content,
@@ -649,13 +650,24 @@ describe("Pi upstream output-budget workaround", () => {
 });
 
 async function loadInputHook(commands: ReadonlyArray<SkillCommand>) {
-  const handlers = await loadHooks(commands);
+  const handlers = await loadHooks(commands, [], {
+    T3_MCP_URL: "http://127.0.0.1/mcp",
+    T3_MCP_BEARER_TOKEN: "fixture",
+  });
   const hook = handlers.get("input");
   assert.isDefined(hook);
   return hook as InputHook;
 }
 
 describe("Pi skill references", () => {
+  it("leaves skill text unchanged with only the permission bridge", async () => {
+    const handlers = await loadHooks([
+      { name: "skill:alpha", source: "skill", sourceInfo: { path: "/unused" } },
+    ]);
+    const hook = handlers.get("input") as InputHook;
+    assert.isUndefined(await hook({ text: "Use $alpha" }, { ui: { notify: assert.fail } }));
+  });
+
   it("loads every selected skill once while preserving inline prose, whitespace, and images", async () => {
     const directory = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "pi-skill-mentions-"));
     try {

@@ -23,7 +23,7 @@ import {
   UserRoundXIcon,
 } from "lucide-react";
 import { msg, useGT, useMessages } from "gt-react";
-import { Children, type CSSProperties, isValidElement, type ReactNode, useState } from "react";
+import { Children, type CSSProperties, isValidElement, type ReactNode } from "react";
 
 import { m, type MessageResolver } from "~/i18n/messages";
 import { useOpenLink } from "~/browser/useOpenLink";
@@ -468,9 +468,7 @@ export function PullRequestActorAvatar({
   className?: string;
 }) {
   const login = actor?.login ?? "ghost";
-  const avatarUrl = actor?.avatarUrl ?? null;
-  const [failedAvatarUrl, setFailedAvatarUrl] = useState<string | null>(null);
-  return avatarUrl === null || failedAvatarUrl === avatarUrl ? (
+  return (
     <span
       aria-hidden
       className={cn(
@@ -480,15 +478,6 @@ export function PullRequestActorAvatar({
     >
       {[...login][0]?.toUpperCase()}
     </span>
-  ) : (
-    <img
-      aria-hidden
-      alt=""
-      src={avatarUrl}
-      loading="lazy"
-      className={cn("size-4 shrink-0 rounded-full bg-muted object-cover", className)}
-      onError={() => setFailedAvatarUrl(avatarUrl)}
-    />
   );
 }
 

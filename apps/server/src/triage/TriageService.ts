@@ -215,3 +215,9 @@ const make = Effect.gen(function* () {
 });
 
 export const layer = Layer.effect(TriageService, make);
+
+export const layerDisabled = Layer.succeed(TriageService, {
+  prepare: Effect.fn("TriageService.prepare")(() =>
+    Effect.fail(new ServerPrepareTriageError({ cause: "Triage is disabled." })),
+  ),
+});

@@ -5,7 +5,6 @@ import "./src/features/development/behavior-probe-entry";
 import "./src/i18n/intl-polyfills";
 import "./src/features/files/text-decoder-polyfill";
 // Record errors thrown while the rest of the app loads.
-import "./src/features/observability/observe";
 import { registerRootComponent } from "expo";
 import "react-native-gesture-handler";
 import { LogBox } from "react-native";

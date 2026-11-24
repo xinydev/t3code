@@ -129,6 +129,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
       instanceId,
     });
     const homeDirectory = yield* HostProcess.HomeDirectory;
+    const { allowOptionalProviderRequests } = host;
     const effectiveConfig = {
       ...config,
       enabled,
@@ -288,12 +289,14 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
               stateDir,
               catalog,
               scopedLimitNames,
-              (version) =>
-                ClaudeResetCredits.readClaudeResetCredits(configDir, version).pipe(
-                  Effect.provideService(HttpClient.HttpClient, httpClient),
-                  Effect.provideService(FileSystem.FileSystem, fileSystem),
-                  Effect.provideService(Path.Path, path),
-                ),
+              allowOptionalProviderRequests === false
+                ? undefined
+                : (version) =>
+                    ClaudeResetCredits.readClaudeResetCredits(configDir, version).pipe(
+                      Effect.provideService(HttpClient.HttpClient, httpClient),
+                      Effect.provideService(FileSystem.FileSystem, fileSystem),
+                      Effect.provideService(Path.Path, path),
+                    ),
             ),
           ),
           Effect.tap((provider) =>
@@ -462,7 +465,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
         ),
       orchestrationAdapter,
       textGeneration,
-      consumeResetCredit,
+      ...(allowOptionalProviderRequests === false ? {} : { consumeResetCredit }),
     } satisfies ProviderInstance;
   }),
 };

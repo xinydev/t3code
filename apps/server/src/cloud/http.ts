@@ -135,6 +135,7 @@ export const layer = HttpApiBuilder.group(
           const state = yield* toHttpError(cloudLink.linkState());
           // Linking also writes relay preferences, so configure alone cannot finish it.
           const linkableHere =
+            state.linkableHere !== false &&
             principal.scopes.has(AuthRelayConfigureScope) &&
             principal.scopes.has(AuthRelayWriteScope);
           return { ...state, linkableHere };

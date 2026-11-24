@@ -904,7 +904,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer))(
           expect(
             clientsBeforeRevoke.find((entry) => entry.sessionId === clientSession.sessionId)?.client
               .deviceType,
-          ).toBe("mobile");
+          ).toBe("unknown");
           expect(revokedCount).toBe(1);
           expect(clientsAfterRevoke).toHaveLength(1);
           expect(clientsAfterRevoke[0]?.sessionId).toBe(administrativeSession.sessionId);

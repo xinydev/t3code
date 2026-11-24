@@ -29,7 +29,7 @@ API keys are stored outside `settings.json`, and ambient `GEMINI_API_KEY` / Goog
 
 - Models (including Claude and GPT when included in your plan) and thinking levels come from your Antigravity account.
 - Use `/plan` for planning, `/compact` to summarize (if supported by your runtime), or `/clear` for a fresh session.
-- **Edit from here** starts a fresh Antigravity session with the kept conversation history.
+- **Edit from here** starts a fresh Antigravity session with your edited request and any context you attach.
 - **Native goals**: Send `/goal <objective>` when supported by your runtime. Use **Stop** to interrupt, then tell Antigravity to stop pursuing it before starting new work (`pause`/`resume`/`clear` are not supported).
 - **Subagents**: Batched subagent activity is inspectable read-only via **Subagent work** (**Work** on mobile).
 - Antigravity creates empty `.gemini/skills` and `.agents/skills` directories in workspaces on start (untracked by Git).

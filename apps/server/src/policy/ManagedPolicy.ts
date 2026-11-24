@@ -36,6 +36,7 @@ export class ManagedPolicy extends Context.Service<
     /** Where the policy is read from, whether or not a file exists there. */
     readonly path: string;
     readonly document: ManagedPolicyDocument | undefined;
+    readonly connectDisabled?: true;
     readonly settings: ManagedSettings.ManagedSettings;
     readonly providers: ManagedProviders.ManagedProviders;
     /** What clients are told; absent when no policy applies. */
@@ -206,7 +207,7 @@ const make = Effect.gen(function* () {
       lockedSettings: policy.summary.lockedSettings,
     });
   }
-  return policy;
+  return { ...policy, connectDisabled: true as const };
 });
 
 // A single-executable server resolves packages on disk only through `require`.

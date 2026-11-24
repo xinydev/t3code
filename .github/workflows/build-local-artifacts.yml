@@ -1,0 +1,99 @@
+name: Build local artifacts
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Same sparse checkout as release-desktop.yml. Checkout's credential cleanup
+# fails on the orphaned gitlinks in .repos.
+jobs:
+  linux-server:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Checkout source
+        shell: bash
+        env:
+          GIT_TERMINAL_PROMPT: "0"
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "$GITHUB_SHA"
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git -c checkout.workers=0 checkout --detach FETCH_HEAD
+      - uses: ./.github/actions/setup-ci-deps
+        with:
+          install-args: --filter=t3... --filter=@t3tools/web... --filter=@t3tools/scripts...
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
+        with:
+          toolchain: stable
+          targets: x86_64-unknown-linux-gnu
+      - name: Build Linux x64 server
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y libatomic1 patchelf
+          version="$(node -p "require('./apps/server/package.json').version.split('+')[0]")+local.${GITHUB_RUN_ID}"
+          export APP_VERSION="$version"
+          vp run --filter t3 build --client-only
+          node apps/server/scripts/cli.ts build-exe
+          cargo build --locked --release --manifest-path native/resource-monitor/Cargo.toml --target x86_64-unknown-linux-gnu
+          monitor_dir="$RUNNER_TEMP/cli-resource-monitor"
+          mkdir -p "$monitor_dir/linux-x64"
+          cp native/resource-monitor/target/x86_64-unknown-linux-gnu/release/t3-resource-monitor "$monitor_dir/linux-x64/"
+          node scripts/build-cli-archive.ts --platform linux --arch x64 --version "$version" --resource-monitor-dir "$monitor_dir"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: release-cli/*.tar.gz
+          if-no-files-found: error
+          archive: false
+
+  mac-app:
+    runs-on: macos-26
+    timeout-minutes: 40
+    steps:
+      - name: Checkout source
+        shell: bash
+        env:
+          GIT_TERMINAL_PROMPT: "0"
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "$GITHUB_SHA"
+          git sparse-checkout set --no-cone '/*' '!/.repos/'
+          git -c checkout.workers=0 checkout --detach FETCH_HEAD
+      - uses: ./.github/actions/setup-ci-deps
+        with:
+          install-args: --filter=@t3tools/desktop... --filter=t3... --filter=@t3tools/web... --filter=@t3tools/scripts...
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
+        with:
+          toolchain: stable
+          targets: aarch64-apple-darwin
+      - name: Build macOS ARM64 app
+        env:
+          T3CODE_DESKTOP_SIGNED: "false"
+        shell: bash
+        run: |
+          set -euo pipefail
+          export T3CODE_DESKTOP_VERSION="$(node -p "require('./apps/server/package.json').version.split('+')[0]")+local.${GITHUB_RUN_ID}"
+          app_dir="$RUNNER_TEMP/t3-desktop"
+          env -u GITHUB_REPOSITORY -u T3CODE_DESKTOP_UPDATE_REPOSITORY \
+            vp run dist:desktop:artifact --platform mac --target dir --arch arm64 --output-dir "$app_dir"
+          apps=("$app_dir"/mac*/*.app)
+          if [[ ${#apps[@]} -ne 1 || ! -d "${apps[0]}" ]]; then
+            echo "Expected exactly one macOS app bundle in $app_dir" >&2
+            exit 1
+          fi
+          app="${apps[0]}"
+          # Archive the bundle to preserve its executable bits and framework symlinks.
+          tar -czf "$RUNNER_TEMP/desktop-mac-arm64.tar.gz" -C "$(dirname "$app")" "$(basename "$app")"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: ${{ runner.temp }}/desktop-mac-arm64.tar.gz
+          if-no-files-found: error
+          archive: false

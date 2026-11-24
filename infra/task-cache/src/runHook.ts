@@ -2,7 +2,7 @@
 import * as NodeChildProcess from "node:child_process";
 import * as NodeURL from "node:url";
 import { remoteCacheUrl } from "./remoteCache.ts";
-import { flushTelemetry, observeSummaries } from "./telemetry.ts";
+import { TASK_CACHE_TELEMETRY_ENABLED, flushTelemetry, observeSummaries } from "./telemetry.ts";
 
 export default function start({ root }: { readonly root: string }) {
   const url = remoteCacheUrl(root);
@@ -11,7 +11,7 @@ export default function start({ root }: { readonly root: string }) {
   endpoint.username = "";
   endpoint.password = "";
   const stop =
-    process.env.T3_TASK_CACHE_TELEMETRY === "off"
+    !TASK_CACHE_TELEMETRY_ENABLED || process.env.T3_TASK_CACHE_TELEMETRY === "off"
       ? undefined
       : observeSummaries(root, endpoint.href.replace(/\/$/, ""), process.env);
   const finish = async () => {

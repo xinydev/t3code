@@ -169,7 +169,7 @@ export class UsageService extends Context.Service<
   }
 >()("t3/usage/UsageService") {}
 
-export const make = Effect.gen(function* () {
+const makeUsageService = Effect.fnUntraced(function* (allowRateDownloads: boolean) {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const config = yield* ServerConfig.ServerConfig;
@@ -301,6 +301,7 @@ export const make = Effect.gen(function* () {
     const now = yield* Clock.currentTimeMillis;
     const maxAgeMs = force ? RATES_REFRESH_FLOOR_MS : RATES_TTL_MS;
     yield* loadSavedRates;
+    if (!allowRateDownloads) return;
     if (ratesFetchedAtMs !== null && now - ratesFetchedAtMs < maxAgeMs) return;
     if (ratesLastFailedAtMs !== null && now - ratesLastFailedAtMs < RATES_REFRESH_FLOOR_MS) return;
 
@@ -1272,4 +1273,19 @@ export const make = Effect.gen(function* () {
   return { readSummary, refreshRates, awaitPersisted } as const;
 });
 
-export const layer = Layer.effect(UsageService, make);
+export const make = makeUsageService(true);
+export const layer = Layer.effect(UsageService, makeUsageService(false));
+
+export const layerDisabled = Layer.succeed(UsageService, {
+  readSummary: Effect.fn("UsageService.readSummary")(() =>
+    Effect.fail(
+      new UsageReadError({ reason: "scanFailed", detail: "Usage collection is disabled." }),
+    ),
+  ),
+  refreshRates: Effect.succeed({
+    status: "unavailable" as const,
+    source: "disabled",
+    fetchedAt: null,
+    knownModels: 0,
+  }),
+});

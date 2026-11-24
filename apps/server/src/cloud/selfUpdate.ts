@@ -70,6 +70,14 @@ export class ServerSelfUpdate extends Context.Service<
   }
 >()("t3/cloud/selfUpdate/ServerSelfUpdate") {}
 
+const updateDisabled = () =>
+  Effect.fail(new ServerSelfUpdateError({ reason: "Updates are disabled in this build." }));
+
+export const layerDisabled = Layer.succeed(ServerSelfUpdate, {
+  update: updateDisabled,
+  commitDesktopUpdate: updateDisabled,
+});
+
 /**
  * A server starting from the runtime its launcher settled on means runtimes left by earlier
  * updates can go. The boot service says so through its IPC context. The SSH launcher and the

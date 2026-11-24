@@ -1,6 +1,7 @@
 import type {
   BackgroundScope,
   ChatAttachment,
+  ProviderDriverKind,
   ServerSettings,
   ServerSettingsError,
 } from "@t3tools/contracts";
@@ -45,6 +46,9 @@ export class ProviderHost extends Context.Service<
       readonly subscribe: Effect.Effect<Stream.Stream<ServerSettings>, never, Scope.Scope>;
     };
     readonly shouldRunBackgroundWork: (scope: BackgroundScope) => Effect.Effect<boolean>;
+    /** Optional quota reads and supplemental model queries made by T3. */
+    readonly allowOptionalProviderRequests?: boolean;
+    readonly t3ProviderIntegrationsEnabled?: (driver: ProviderDriverKind) => boolean;
     /** Completes once server startup finishes; first provider checks wait for it. */
     readonly awaitServerReady?: Effect.Effect<void>;
     /** Absolute attachment path, or null if the ID does not resolve inside attachmentsDir. */

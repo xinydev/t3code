@@ -19,6 +19,10 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+import {
+  AutomaticProviderContext,
+  isAutomaticProviderPrompt,
+} from "../provider/t3ProviderIntegrations.ts";
 import * as McpAppModelContext from "../mcpApps/McpAppModelContext.ts";
 import * as EventSink from "./EventSink.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
@@ -122,6 +126,7 @@ export const layer: Layer.Layer<
   ProviderTurnControlServiceV2,
   Effect.gen(function* () {
     const eventSink = yield* EventSink.EventSinkV2;
+    const automaticContext = yield* AutomaticProviderContext;
     const projections = yield* ProjectionStore.ProjectionStoreV2;
     const sessions = yield* ProviderSessionManager.ProviderSessionManagerV2;
     const mcpAppModelContext = yield* McpAppModelContext.McpAppModelContext;
@@ -421,6 +426,13 @@ export const layer: Layer.Layer<
       steer: Effect.fn("ProviderTurnControlService.steer")(
         function* (input) {
           const context = yield* projections.getProviderControlContext(input.threadId, input);
+          if (
+            !automaticContext &&
+            context.message !== undefined &&
+            isAutomaticProviderPrompt(context.message)
+          ) {
+            return;
+          }
           const ownership = context.message?.delegatedCompletion;
           if (ownership !== undefined) {
             const projection = yield* projections.getThreadRecords(input.threadId, ["runs"], {
@@ -452,6 +464,10 @@ export const layer: Layer.Layer<
             mcpAppModelContext,
             input.threadId,
           );
+          const projectedText = projectComposerContextForProvider({
+            text: message.text,
+            records: message.context?.records ?? [],
+          });
           yield* loaded.session.value
             .steerTurn({
               threadId: input.threadId,
@@ -464,13 +480,9 @@ export const layer: Layer.Layer<
               ...(appContext.length === 0 ? {} : { appContext }),
               message: {
                 messageId: message.id,
-                text: withMessageSenderNote(
-                  message,
-                  projectComposerContextForProvider({
-                    text: message.text,
-                    records: message.context?.records ?? [],
-                  }),
-                ),
+                text: automaticContext
+                  ? withMessageSenderNote(message, projectedText)
+                  : projectedText,
                 attachments: message.attachments,
                 createdBy: message.createdBy,
                 creationSource: message.creationSource,

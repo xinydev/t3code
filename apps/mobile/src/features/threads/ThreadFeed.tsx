@@ -86,11 +86,12 @@ import type { ToolCallVisibility } from "@t3tools/contracts/settings";
 import { encodeComposerContextFragment } from "@t3tools/shared/composerContextClipboard";
 import {
   hasThreadLinks,
-  hostedThreadLink,
+  formatHostedThreadLink,
   parseThreadLinkHref,
   threadLinkRefs,
 } from "@t3tools/shared/threadLinks";
 import { PROMPT_LINK_MAX_PROMPT_LENGTH } from "@t3tools/shared/promptLinks";
+import { HOSTED_SHARING_ENABLED } from "@t3tools/shared/connectAuth";
 import {
   parseComposerContextHref,
   collectComposerContextReferences,
@@ -443,6 +444,7 @@ function UserMessageCopyButton(props: {
       iconSize={13}
     />
   );
+  if (!HOSTED_SHARING_ENABLED) return button;
   const linkText = replaceComposerContextReferences(props.text, (reference) => reference.label);
   if (linkText.length > PROMPT_LINK_MAX_PROMPT_LENGTH) return button;
   return (
@@ -3548,7 +3550,8 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       const thread = resolveLinkedThread(href);
       if (thread) {
         if (actionId === "open-thread") onMarkdownLinkPress(href);
-        else if (actionId === "copy-thread-link") copyTextWithHaptic(hostedThreadLink(thread));
+        else if (actionId === "copy-thread-link")
+          copyTextWithHaptic(formatHostedThreadLink(thread, ""));
         return;
       }
       const deviceUrl = deviceLoopbackUrl(href);
@@ -3610,6 +3613,18 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
     },
   };
   const renderMarkdownImage: MarkdownImageRenderer = (image) => {
+    const url = normalizeNativeMarkdownUrl(image.href);
+    if (/^https?:\/\//i.test(url)) {
+      return (
+        <Text
+          accessibilityRole="link"
+          onPress={() => onMarkdownLinkPress(url, true)}
+          style={{ color: markdownStyles.assistant.nativeTextStyle.linkColor }}
+        >
+          {image.alt || url}
+        </Text>
+      );
+    }
     const media = resolveMarkdownMediaPreview(image.href, {
       environmentId: props.environmentId,
       threadId: props.threadId,

@@ -284,3 +284,9 @@ const make = Effect.fn("DesktopRendererHistory.make")(function* () {
 });
 
 export const layer = Layer.effect(DesktopRendererHistory, make());
+
+export const layerDisabled = Layer.succeed(DesktopRendererHistory, {
+  register: Effect.fn("DesktopRendererHistory.register")(() => Effect.void),
+  recordMetrics: Effect.fn("DesktopRendererHistory.recordMetrics")(() => Effect.void),
+  shutdown: Effect.void,
+});

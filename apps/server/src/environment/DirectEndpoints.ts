@@ -243,3 +243,8 @@ export const make = Effect.gen(function* () {
 });
 
 export const layer = Layer.effect(DirectEndpoints, make);
+
+export const layerDisabled = Layer.succeed(DirectEndpoints, {
+  resolveAvailable: Effect.fn("DirectEndpoints.resolveAvailable")(() => Effect.succeed([])),
+  resolve: Effect.fn("DirectEndpoints.resolve")(() => Effect.succeed([])),
+});

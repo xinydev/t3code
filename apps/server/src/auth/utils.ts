@@ -1,8 +1,4 @@
-import type {
-  AuthClientMetadata,
-  AuthClientMetadataDeviceType,
-  AuthClientPresentationMetadata,
-} from "@t3tools/contracts";
+import type { AuthClientMetadata, AuthClientPresentationMetadata } from "@t3tools/contracts";
 import type * as HttpServerRequest from "effect/http/HttpServerRequest";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Effect's Digest is effectful; the cookie name stays a plain function.
 import * as NodeCrypto from "node:crypto";
@@ -106,51 +102,6 @@ function normalizeIpAddress(value: string | null | undefined): string | undefine
   return normalized.startsWith("::ffff:") ? normalized.slice("::ffff:".length) : normalized;
 }
 
-function inferDeviceType(userAgent: string | undefined): AuthClientMetadataDeviceType {
-  if (!userAgent) {
-    return "unknown";
-  }
-
-  const normalized = userAgent.toLowerCase();
-  if (/bot|crawler|spider|slurp|curl|wget/.test(normalized)) {
-    return "bot";
-  }
-  if (/ipad|tablet/.test(normalized)) {
-    return "tablet";
-  }
-  if (/iphone|android.+mobile|mobile/.test(normalized)) {
-    return "mobile";
-  }
-  return "desktop";
-}
-
-function inferBrowser(userAgent: string | undefined): string | undefined {
-  if (!userAgent) {
-    return undefined;
-  }
-  const normalized = userAgent.toLowerCase();
-  if (/edg(?:e|a|ios)?\//.test(normalized)) return "Edge";
-  if (/opr\/|opios\//.test(normalized)) return "Opera";
-  if (/firefox\/|fxios\//.test(normalized)) return "Firefox";
-  if (/electron\//.test(normalized)) return "Electron";
-  if (/chrome\//.test(normalized) || /crios\//.test(normalized)) return "Chrome";
-  if (/safari\//.test(normalized) && !/chrome\//.test(normalized)) return "Safari";
-  return undefined;
-}
-
-function inferOs(userAgent: string | undefined): string | undefined {
-  if (!userAgent) {
-    return undefined;
-  }
-  const normalized = userAgent.toLowerCase();
-  if (/iphone|ipad|ipod/.test(normalized)) return "iOS";
-  if (/android/.test(normalized)) return "Android";
-  if (/mac os x|macintosh/.test(normalized)) return "macOS";
-  if (/windows nt/.test(normalized)) return "Windows";
-  if (/linux/.test(normalized)) return "Linux";
-  return undefined;
-}
-
 function readRemoteAddressFromSource(source: unknown): string | undefined {
   if (!source || typeof source !== "object") {
     return undefined;
@@ -179,20 +130,18 @@ function resolveClientIpAddress(request: HttpServerRequest.HttpServerRequest): s
   return forwarded && NodeNet.isIP(forwarded) !== 0 ? forwarded : peer;
 }
 
+export type AuthRequestClientMetadata = AuthClientMetadata & {
+  readonly remoteConnection?: boolean;
+};
+
 export function deriveAuthClientMetadata(input: {
   readonly request: HttpServerRequest.HttpServerRequest;
   readonly presented?: AuthClientPresentationMetadata;
-}): AuthClientMetadata {
-  const userAgent = normalizeNonEmptyString(input.request.headers["user-agent"]);
-  const ipAddress = resolveClientIpAddress(input.request);
-  const os = input.presented?.os ?? inferOs(userAgent);
-  const browser = inferBrowser(userAgent);
+}): AuthRequestClientMetadata {
+  const address = resolveClientIpAddress(input.request);
   return {
     ...(input.presented?.label ? { label: input.presented.label } : {}),
-    ...(ipAddress ? { ipAddress } : {}),
-    ...(userAgent ? { userAgent } : {}),
-    deviceType: input.presented?.deviceType ?? inferDeviceType(userAgent),
-    ...(os ? { os } : {}),
-    ...(browser ? { browser } : {}),
+    deviceType: "unknown",
+    ...(address && !isLoopbackIpAddress(address) ? { remoteConnection: true } : {}),
   };
 }

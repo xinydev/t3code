@@ -492,7 +492,7 @@ it.layer(layerCodexTextGenerationTest)("CodexTextGeneration", (it) => {
         launchArgs:
           "--config features.plugins=true --config features.apps=true --config features.connectors=true",
         requireArg:
-          "--config features.plugins=true --config features.apps=true --config features.connectors=true --config features.connectors=false --config features.plugins=false --config features.apps=false --ephemeral",
+          "--config features.connectors=false --config features.plugins=false --config features.apps=false --ephemeral",
       },
       (textGeneration) =>
         Effect.gen(function* () {

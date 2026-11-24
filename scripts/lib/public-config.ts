@@ -101,6 +101,22 @@ export function loadRepoEnv({
   };
 }
 
+export function loadLocalRepoEnv(
+  options?: Parameters<typeof loadRepoEnv>[0],
+): Record<string, string | undefined> {
+  const env = loadRepoEnv(options);
+  for (const key of Object.keys(env)) {
+    if (
+      /^(T3CODE_(CLERK_|RELAY_|MOBILE_OTLP_)|VITE_(CLERK_|T3CODE_RELAY_|RELAY_OTLP_)|EXPO_PUBLIC_(CLERK_|OTLP_))/.test(
+        key,
+      )
+    ) {
+      delete env[key];
+    }
+  }
+  return env;
+}
+
 function resolvePublicConfig(...sources: readonly Environment[]): T3CodePublicConfig {
   return {
     clerkPublishableKey: firstNonEmpty(

@@ -42,6 +42,7 @@ import {
   orchestrationCommandsTotal,
 } from "../observability/Metrics.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
+import { AutomaticProviderContext } from "../provider/t3ProviderIntegrations.ts";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as DelegatedTaskQuestionReactor from "./DelegatedTaskQuestionReactor.ts";
 import * as EffectOutbox from "./EffectOutbox.ts";
@@ -78,6 +79,49 @@ const layerTest = Layer.mergeAll(
     ProviderAdapterRegistry.layerFromAdapters([adapter]),
     { databaseLayer: layerDatabase, runEffectWorker: false },
   ),
+);
+
+it.effect("records an automatic prompt as a no-op without queuing a provider run", () =>
+  Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const threadId = ThreadId.make("thread:automatic-prompt");
+    yield* orchestrator.dispatch({
+      type: "thread.create",
+      commandId: CommandId.make("create-automatic-prompt-thread"),
+      threadId,
+      projectId: ProjectId.make("project:automatic-prompt"),
+      title: "Automatic prompt",
+      modelSelection,
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: null,
+      worktreePath: null,
+      createdBy: "user",
+      creationSource: "web",
+    });
+
+    const command = {
+      type: "message.dispatch",
+      commandId: CommandId.make("send-background-update"),
+      threadId,
+      messageId: MessageId.make("background-update"),
+      text: "Background task completed.",
+      notification: {
+        source: { kind: "system" },
+        outcome: "updated",
+        summary: "Background update",
+      },
+      attachments: [],
+      dispatchMode: { type: "queue_after_active" },
+      createdBy: "agent",
+      creationSource: "server",
+    } as const;
+
+    const result = yield* orchestrator.dispatch(command);
+    assert.deepEqual(result.storedEvents, []);
+    const replay = yield* orchestrator.dispatch(command);
+    assert.isTrue(replay.replayed);
+  }).pipe(Effect.provide(layerTest), Effect.provideService(AutomaticProviderContext, false)),
 );
 
 it.effect.each(

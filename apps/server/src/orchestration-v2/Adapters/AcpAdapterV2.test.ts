@@ -21,6 +21,7 @@ import * as NodePath from "node:path";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as DocumentText from "../../provider/DocumentText.ts";
+import { t3ProviderIntegrationsEnabled } from "../../provider/t3ProviderIntegrations.ts";
 import { assert, beforeAll, describe, it } from "@effect/vitest";
 import {
   CheckpointId,
@@ -2773,6 +2774,13 @@ describe("AcpAdapterV2", () => {
   it.live.each([
     { modeIds: "plain", environment: {}, planModeId: "architect", buildModeId: "ask" },
     {
+      modeIds: "plain without T3 integrations",
+      environment: {},
+      planModeId: "architect",
+      buildModeId: "ask",
+      pure: true,
+    },
+    {
       modeIds: "Copilot URL",
       environment: { T3_ACP_COPILOT_MODES: "1" },
       planModeId: "https://agentclientprotocol.com/protocol/session-modes#plan",
@@ -2787,7 +2795,7 @@ describe("AcpAdapterV2", () => {
     },
   ])(
     "refreshes ACP prompt instructions and native mode when the interaction mode changes ($modeIds mode ids)",
-    ({ environment, planModeId, buildModeId }) =>
+    ({ environment, planModeId, buildModeId, pure }) =>
       Effect.gen(function* () {
         const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
         const selfInvocation = yield* resolveSelfInvocation();
@@ -2804,20 +2812,34 @@ describe("AcpAdapterV2", () => {
           authorizationHeader: "Bearer instruction-transition-token",
           browserToolsAvailable: false,
         });
+        const makeRuntime = makeMockRuntime({
+          childProcessSpawner,
+          mockAgentPath,
+          protocolEvents,
+          environment,
+        });
         const adapter = yield* makeAcpAdapterV2({
           instanceId,
           flavor: {
-            driver: ACP_TEST_DRIVER,
+            driver: pure ? ProviderDriverKind.make("acpRegistry") : ACP_TEST_DRIVER,
             capabilities: AcpProviderCapabilitiesV2,
-            makeRuntime: makeMockRuntime({
-              childProcessSpawner,
-              mockAgentPath,
-              protocolEvents,
-              environment,
-            }),
+            makeRuntime: (input) => {
+              if (pure) {
+                assert.deepEqual(input.mcpServers, []);
+                assert.deepEqual(input.acpMcpServers, []);
+                assert.deepEqual(input.httpMcpServers, []);
+                assert.deepEqual(input.processEnvironment, { T3CODE_THREAD_ID: threadId });
+              }
+              return makeRuntime(input);
+            },
           },
           selfInvocation,
-        });
+        }).pipe(
+          Effect.updateService(ProviderHost.ProviderHost, (host) => ({
+            ...host,
+            t3ProviderIntegrationsEnabled: pure ? t3ProviderIntegrationsEnabled : () => true,
+          })),
+        );
         const policy = (interactionMode: "default" | "plan") =>
           ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
             runtimeMode: "full-access",
@@ -2895,11 +2917,15 @@ describe("AcpAdapterV2", () => {
         assert.equal(whitespaceCommand.textBlockCount, 1);
         assert.notInclude(whitespaceCommand.prompt, "<t3_code_instructions>");
         const firstDefault = yield* runTurn(2, defaultPolicy, "First default request.");
-        assert.equal(firstDefault.textBlockCount, 2);
-        assert.include(firstDefault.prompt, "T3 Code interaction mode: Default");
-        assert.include(firstDefault.prompt, "## T3 Code browser");
-        assert.include(firstDefault.prompt, "T3 Code orchestration");
-        assert.include(firstDefault.prompt, "<runtime_info>");
+        assert.equal(firstDefault.textBlockCount, pure ? 1 : 2);
+        if (pure) {
+          assert.equal(firstDefault.prompt, "First default request.");
+        } else {
+          assert.include(firstDefault.prompt, "T3 Code interaction mode: Default");
+          assert.include(firstDefault.prompt, "## T3 Code browser");
+          assert.include(firstDefault.prompt, "T3 Code orchestration");
+          assert.include(firstDefault.prompt, "<runtime_info>");
+        }
         assert.notInclude(
           firstDefault.methods,
           "session/set_config_option",
@@ -2911,14 +2937,20 @@ describe("AcpAdapterV2", () => {
 
         const planPolicy = policy("plan");
         const firstPlan = yield* runTurn(4, planPolicy, "Plan this change.");
-        assert.include(firstPlan.prompt, "T3 Code interaction mode: Plan");
+        assert.include(
+          firstPlan.prompt,
+          pure ? "Plan this change." : "T3 Code interaction mode: Plan",
+        );
         assert.deepEqual(firstPlan.modeSets, [planModeId]);
         assert.include(
           (yield* runTurn(5, planPolicy, "Continue planning.")).prompt,
           "Continue planning.",
         );
         const restoredBuild = yield* runTurn(6, defaultPolicy, "Implement the change.");
-        assert.include(restoredBuild.prompt, "T3 Code interaction mode: Default");
+        assert.include(
+          restoredBuild.prompt,
+          pure ? "Implement the change." : "T3 Code interaction mode: Default",
+        );
         assert.deepEqual(
           restoredBuild.modeSets,
           [buildModeId],
@@ -2928,8 +2960,8 @@ describe("AcpAdapterV2", () => {
           instanceId,
           model: "composer-2",
         });
-        assert.equal(switchedModel.textBlockCount, 2);
-        assert.include(switchedModel.prompt, "as composer-2");
+        assert.equal(switchedModel.textBlockCount, pure ? 1 : 2);
+        assert.include(switchedModel.prompt, pure ? "Switch models." : "as composer-2");
       }).pipe(Effect.provide(layerTest)),
   );
 

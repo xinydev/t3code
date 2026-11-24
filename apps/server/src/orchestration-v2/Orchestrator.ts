@@ -122,6 +122,10 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
 import * as ProjectStore from "./ProjectStore.ts";
+import {
+  AutomaticProviderContext,
+  isAutomaticProviderPrompt,
+} from "../provider/t3ProviderIntegrations.ts";
 import * as TaskFolderStore from "../workspace/TaskFolderStore.ts";
 import {
   isCheckpointRestoreIsolated,
@@ -1654,6 +1658,7 @@ const hasRunningDelegatedTasks = (subagents: ReadonlyArray<OrchestrationV2Subage
   );
 
 const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(function* () {
+  const automaticContext = yield* AutomaticProviderContext;
   const checkpointService = yield* CheckpointServiceV2;
   const commandPolicy = yield* CommandPolicyV2;
   const contextHandoffService = yield* ContextHandoffServiceV2;
@@ -2925,6 +2930,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         queuedProviderThread.id,
       );
       const coveredRuns =
+        !automaticContext ||
         freshContext ||
         canResumeAcrossInstances ||
         latestHandoffRun === undefined ||
@@ -2939,7 +2945,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             );
       const needsFullContext = deliveryProviderThread.nativeThreadRef === null;
       const legacyImportItems =
-        projection.thread.historyOrigin === "v1_import" && contextBoundary === 0
+        automaticContext && projection.thread.historyOrigin === "v1_import" && contextBoundary === 0
           ? yield* readHandoffItems(threadId, [null])
           : [];
       const handoffStrategy = needsFullContext
@@ -6243,6 +6249,13 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     command: Extract<OrchestrationV2Command, { readonly type: "thread.merge_back" }>,
     events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
   ) {
+    if (!automaticContext) {
+      return yield* new OrchestratorDispatchError({
+        commandId: command.commandId,
+        commandType: command.type,
+        cause: "Conversation history transfer is disabled.",
+      });
+    }
     yield* Effect.annotateCurrentSpan({
       "orchestration_v2.command_id": command.commandId,
       "orchestration_v2.command_type": command.type,
@@ -6853,25 +6866,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             }),
         ),
       );
-      const targetCapabilities = yield* targetAdapter.getCapabilities().pipe(
-        Effect.mapError(
-          (cause) =>
-            new OrchestratorProviderAdapterError({
-              commandId: input.command.commandId,
-              providerInstanceId: input.modelSelection.instanceId,
-              cause,
-            }),
-        ),
-      );
-      yield* mapDispatchError(input.command)(
-        commandPolicy.ensureContextHandoff({
-          commandId: input.command.commandId,
-          threadId: input.command.threadId,
-          providerInstanceId: input.modelSelection.instanceId,
-          capabilities: targetCapabilities,
-          strategy: "full_thread_summary",
-        }),
-      );
       const existingTargetProviderThread = rootProviderThreadsForProvider(
         input.projection,
         input.modelSelection.instanceId,
@@ -6913,64 +6907,86 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               lastRunOrdinal: targetRun.ordinal,
               updatedAt: now,
             };
-      const transferId = yield* mapDispatchError(input.command)(
-        idAllocator.allocate.contextTransfer({
+      restartProviderThread = targetProviderThreadBase;
+      if (automaticContext) {
+        const targetCapabilities = yield* targetAdapter.getCapabilities().pipe(
+          Effect.mapError(
+            (cause) =>
+              new OrchestratorProviderAdapterError({
+                commandId: input.command.commandId,
+                providerInstanceId: input.modelSelection.instanceId,
+                cause,
+              }),
+          ),
+        );
+        yield* mapDispatchError(input.command)(
+          commandPolicy.ensureContextHandoff({
+            commandId: input.command.commandId,
+            threadId: input.command.threadId,
+            providerInstanceId: input.modelSelection.instanceId,
+            capabilities: targetCapabilities,
+            strategy: "full_thread_summary",
+          }),
+        );
+        const transferId = yield* mapDispatchError(input.command)(
+          idAllocator.allocate.contextTransfer({
+            sourceThreadId: input.command.threadId,
+            targetThreadId: input.command.threadId,
+            type: "provider_handoff",
+          }),
+        );
+        const contextBoundary = contextBoundaryOrdinal(input.projection);
+        restartHandoff = yield* contextHandoffService
+          .prepareProviderHandoff({
+            threadId: input.command.threadId,
+            targetRunId: targetRun.id,
+            transferId,
+            fromProviderThreadIds: [providerThread.id],
+            toProviderThreadId: targetProviderThreadBase.id,
+            fromProviderInstanceId: targetRun.providerInstanceId,
+            toProviderInstanceId: input.modelSelection.instanceId,
+            coveredRunOrdinals: { from: Math.max(1, contextBoundary), to: targetRun.ordinal },
+            strategy: "full_thread_summary",
+            items: yield* readHandoffItems(
+              input.command.threadId,
+              contextBoundary === 0
+                ? undefined
+                : input.projection.runs
+                    .filter((run) => run.ordinal >= contextBoundary)
+                    .map((run) => run.id),
+            ),
+            runs: input.projection.runs,
+            createdAt: now,
+          })
+          .pipe(mapDispatchError(input.command));
+        restartProviderThread = {
+          ...targetProviderThreadBase,
+          handoffIds: Array.from(
+            new Set([...targetProviderThreadBase.handoffIds, restartHandoff.id]),
+          ),
+        };
+        restartTransfer = {
+          id: transferId,
+          type: "provider_handoff",
           sourceThreadId: input.command.threadId,
           targetThreadId: input.command.threadId,
-          type: "provider_handoff",
-        }),
-      );
-      const contextBoundary = contextBoundaryOrdinal(input.projection);
-      restartHandoff = yield* contextHandoffService
-        .prepareProviderHandoff({
-          threadId: input.command.threadId,
+          sourcePoint: contextSourcePointForRun(input.projection, targetRun),
+          basePoint: null,
+          sourceProviderInstanceId: targetRun.providerInstanceId,
+          targetProviderInstanceId: input.modelSelection.instanceId,
           targetRunId: targetRun.id,
-          transferId,
-          fromProviderThreadIds: [providerThread.id],
-          toProviderThreadId: targetProviderThreadBase.id,
-          fromProviderInstanceId: targetRun.providerInstanceId,
-          toProviderInstanceId: input.modelSelection.instanceId,
-          coveredRunOrdinals: { from: Math.max(1, contextBoundary), to: targetRun.ordinal },
-          strategy: "full_thread_summary",
-          items: yield* readHandoffItems(
-            input.command.threadId,
-            contextBoundary === 0
-              ? undefined
-              : input.projection.runs
-                  .filter((run) => run.ordinal >= contextBoundary)
-                  .map((run) => run.id),
-          ),
-          runs: input.projection.runs,
+          status: "consumed",
+          resolution: {
+            strategy: "portable_context",
+            contextHandoffId: restartHandoff.id,
+          },
+          createdBy: input.createdBy,
+          error: null,
           createdAt: now,
-        })
-        .pipe(mapDispatchError(input.command));
-      restartProviderThread = {
-        ...targetProviderThreadBase,
-        handoffIds: Array.from(
-          new Set([...targetProviderThreadBase.handoffIds, restartHandoff.id]),
-        ),
-      };
-      restartTransfer = {
-        id: transferId,
-        type: "provider_handoff",
-        sourceThreadId: input.command.threadId,
-        targetThreadId: input.command.threadId,
-        sourcePoint: contextSourcePointForRun(input.projection, targetRun),
-        basePoint: null,
-        sourceProviderInstanceId: targetRun.providerInstanceId,
-        targetProviderInstanceId: input.modelSelection.instanceId,
-        targetRunId: targetRun.id,
-        status: "consumed",
-        resolution: {
-          strategy: "portable_context",
-          contextHandoffId: restartHandoff.id,
-        },
-        createdBy: input.createdBy,
-        error: null,
-        createdAt: now,
-        updatedAt: now,
-        consumedAt: now,
-      };
+          updatedAt: now,
+          consumedAt: now,
+        };
+      }
       restartSessionTransition = { type: "detach" };
     } else if (requiresProviderSessionRestart) {
       const nextProviderSessionId = yield* mapDispatchError(input.command)(
@@ -7296,6 +7312,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     events: Ref.Ref<Array<OrchestrationV2DomainEvent>>,
     effects: Ref.Ref<Array<PendingOrchestrationEffectV2>>,
   ) {
+    if (!automaticContext && isAutomaticProviderPrompt(command, command)) return;
     // A compacted thread reads every run, but attempts, nodes, messages, provider turns and prompts
     // only for its recent runs and the runs this command names. An idle compaction reads in full:
     // its busy check below looks for a delegated result's message under any old run.
@@ -8090,7 +8107,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ? undefined
         : projection.runs.find((run) => run.id === command.steerFollowUpOfRunId);
     const queueBehindRun = activeRun ?? worktreeMissingRun ?? steerFollowUpSource;
-    const pendingMergeBackTransfers = pendingMergeBackTransfersForThread(projection);
+    const pendingMergeBackTransfers = automaticContext
+      ? pendingMergeBackTransfersForThread(projection)
+      : [];
     const startsOrQueuesRun =
       dispatchMode.type === "defer_start" ||
       dispatchMode.type === "start_immediately" ||
@@ -8567,7 +8586,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     const latestCompletedRun = projection.runs.findLast((run) => run.status === "completed");
     const latestHandoffRun = projection.runs.findLast(isHandoffSourceRun);
     const legacyImportItems =
-      projection.thread.historyOrigin === "v1_import" && contextBoundary === 0
+      automaticContext && projection.thread.historyOrigin === "v1_import" && contextBoundary === 0
         ? yield* readHandoffItems(command.threadId, [null])
         : [];
     const isProviderSwitch =
@@ -9148,7 +9167,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             }),
           );
     const canResolveForkNatively = forkExecution === "native_fork";
-    const requiresPortableFork = forkExecution === "portable_context";
+    const requiresPortableFork = automaticContext && forkExecution === "portable_context";
 
     if (canResolveForkNatively) {
       yield* mapDispatchError(command)(
@@ -9255,7 +9274,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         : []),
     ];
     const sideChatParentItems =
-      !sideChatFork || sourceProjection === null
+      !automaticContext || !sideChatFork || sourceProjection === null
         ? []
         : [
             ...(sideChatWithoutSource ? yield* readInheritedItems(sourceProjection.thread) : []),
@@ -9268,7 +9287,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           ];
     // The framing note goes in even when the parent has no activity after the fork point.
     const sideChatContextHandoff =
-      !sideChatFork || pendingForkTransfer === undefined || sourceProjection === null
+      !automaticContext ||
+      !sideChatFork ||
+      pendingForkTransfer === undefined ||
+      sourceProjection === null
         ? null
         : yield* contextHandoffService
             .prepareSideChatContext({
@@ -9292,7 +9314,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ? undefined
         : lastDeliveredRunForProviderThread(projection, targetProviderThread.id);
     const providerSwitchCoveredRuns =
-      !isProviderSwitch || canResumeAcrossInstances || latestHandoffRun === undefined
+      !automaticContext ||
+      !isProviderSwitch ||
+      canResumeAcrossInstances ||
+      latestHandoffRun === undefined
         ? []
         : projection.runs.filter(
             (run) =>
@@ -9757,7 +9782,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             contextHandoffId: mergeBackHandoff.id,
           };
 
-    if (pendingForkTransfer !== undefined && canResolveForkNatively) {
+    if (pendingForkTransfer !== undefined && (canResolveForkNatively || !automaticContext)) {
       yield* emitEvent({
         type: "context-transfer.updated",
         threadId: command.threadId,
@@ -9768,7 +9793,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           ...pendingForkTransfer,
           targetProviderInstanceId: modelSelection.instanceId,
           targetRunId: runId,
-          status: "pending",
+          status: canResolveForkNatively ? "pending" : "superseded",
           resolution: null,
           error: null,
           updatedAt: now,
@@ -11737,7 +11762,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             Array.isArray(answer) &&
             answer.length === 0
           ) {
-            replies.push(`${question.question}\nNone selected`);
+            if (automaticContext) replies.push(`${question.question}\nNone selected`);
             continue;
           }
           const answered = isMessageQuestionAnswer(answer);
@@ -11751,13 +11776,13 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             });
           }
           if (!answered) {
-            replies.push(question.question);
+            if (automaticContext) replies.push(question.question);
             continue;
           }
           const text = typeof answer === "string" ? answer : answer.join(", ");
-          replies.push(`${question.question}\n${text.trim()}`);
+          replies.push(automaticContext ? `${question.question}\n${text.trim()}` : text.trim());
         }
-        if (replies.length === 0) {
+        if (replies.length === 0 && automaticContext) {
           return yield* new OrchestratorDispatchError({
             commandId: command.commandId,
             commandType: command.type,
@@ -11912,6 +11937,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       }
       if (runtimeRequest.responseCapability.type === "message") {
         if (resolvedNodeStatus === "cancelled") return;
+        const attachments = Object.values(command.attachmentsByQuestionId ?? {}).flat();
+        if (replies.length === 0 && attachments.length === 0) return;
         let dispatchMode: Extract<
           OrchestrationV2Command,
           { type: "message.dispatch" }
@@ -11951,7 +11978,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           threadId: command.threadId,
           messageId: MessageId.make(`async-answer:${command.requestId}`),
           text: replies.join("\n\n"),
-          attachments: Object.values(command.attachmentsByQuestionId ?? {}).flat(),
+          attachments,
           createdBy: "user" as const,
           creationSource: "server" as const,
           dispatchMode,
@@ -16572,6 +16599,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       return yield* replayCommandReceipt(command, existingReceipt.value);
     }
 
+    const skipsAutomaticPrompt =
+      !automaticContext &&
+      command.type === "message.dispatch" &&
+      isAutomaticProviderPrompt(command, command);
+
     // Recheck under the lock; the user may have raised modes since sender preflight.
     const limit = yield* DispatchModeLimit;
     if (limit !== undefined) {
@@ -16589,6 +16621,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     // beats the run-end reaction places the ended run's unread steers before it starts anything.
     if (
       command.type === "message.dispatch" &&
+      !skipsAutomaticPrompt &&
       command.restartContinuationOfRunId === undefined &&
       command.steerFollowUpOfRunId === undefined &&
       (command.dispatchMode.type === "start_immediately" ||
@@ -16607,6 +16640,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       Effect.filterOrFail(
         (planned) =>
           planned.events.length > 0 ||
+          skipsAutomaticPrompt ||
           isUnobservedAcknowledgement(command) ||
           command.type === "thread.background-work.settle" ||
           // A stale visit changes no read state.

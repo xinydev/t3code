@@ -70,6 +70,7 @@ import * as PullRequestService from "../pullRequest/PullRequestService.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ProjectSetupScriptRunner from "../project/ProjectSetupScriptRunner.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
+import { AutomaticProviderContext } from "../provider/t3ProviderIntegrations.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as GitManager from "./GitManager.ts";
 
@@ -3825,6 +3826,29 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       expect(commitInstructions[0]).not.toContain("Local CLAUDE.md:");
       expect(commitInstructions[1]).toContain("Local CLAUDE.md:\nMention the Claude provider.");
     }),
+  );
+
+  it.effect("omits repository instructions and commit subjects from the local build's writer", () =>
+    Effect.gen(function* () {
+      const repoDir = yield* makeTempDir("t3code-git-manager-");
+      yield* initRepo(repoDir);
+      NodeFS.writeFileSync(NodePath.join(repoDir, "AGENTS.md"), "Use imperative subjects.\n");
+      NodeFS.writeFileSync(NodePath.join(repoDir, "README.md"), "hello\n");
+      const commitInstructions: Array<string | undefined> = [];
+      const { manager } = yield* makeManager({
+        textGeneration: {
+          generateCommitMessage: (input) => {
+            commitInstructions.push(input.policy?.commitInstructions);
+            return Effect.succeed({ subject: "Update readme", body: "" });
+          },
+        },
+      });
+
+      yield* runStackedAction(manager, { cwd: repoDir, action: "commit" });
+
+      expect(commitInstructions).toHaveLength(1);
+      expect(commitInstructions[0]).not.toMatch(/Use imperative subjects|Recent commit subjects/);
+    }).pipe(Effect.provideService(AutomaticProviderContext, false)),
   );
 
   it.effect("keeps signature output out of recent commit subjects", () =>

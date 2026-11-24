@@ -190,3 +190,13 @@ const make = Effect.fn("makeHostResources")(function* () {
 });
 
 export const layer = Layer.effect(HostResources, make());
+
+export const layerDisabled = Layer.succeed(HostResources, {
+  read: Effect.succeed({
+    sampledAt: 0,
+    cpuUtilization: null,
+    cpuCount: 0,
+    availableMemoryBytes: 0,
+    totalMemoryBytes: 0,
+  }),
+});

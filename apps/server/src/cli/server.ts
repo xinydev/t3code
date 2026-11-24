@@ -28,7 +28,11 @@ const runServerCommand = Effect.fn("server.runServerCommand")(function* (
   const { runServer } = yield* Effect.promise(() => import("../server.ts"));
   const logLevel = yield* GlobalFlag.LogLevel;
   const selectAutomaticPort = yield* AutomaticPort.make.pipe(Effect.provide(ProcessRunner.layer));
-  const config = yield* resolveServerConfig(flags, logLevel, { ...options, selectAutomaticPort });
+  const config = yield* resolveServerConfig(flags, logLevel, {
+    ...options,
+    selectAutomaticPort,
+    disableOtlp: true,
+  });
   const run = Effect.raceFirst(
     runServer.pipe(Effect.provideService(ServerConfig.ServerConfig, config)),
     awaitServiceLauncherStop().pipe(Effect.andThen(Effect.interrupt)),

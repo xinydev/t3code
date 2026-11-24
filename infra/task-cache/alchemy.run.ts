@@ -7,22 +7,24 @@ import * as Cloudflare from "@alchemy.run/cloudflare";
 import * as Effect from "effect/Effect";
 import * as Secrets from "alchemy/Secrets";
 import { WriterSecrets } from "./src/deploymentConfig.ts";
+import { TASK_CACHE_TELEMETRY_ENABLED } from "./src/telemetry.ts";
 import * as Worker from "./src/worker.ts";
 
 export default Alchemy.Stack(
   "T3TaskCache",
   {
-    providers: Axiom.providers().pipe(Layer.provideMerge(Cloudflare.providers())),
+    providers: TASK_CACHE_TELEMETRY_ENABLED
+      ? Axiom.providers().pipe(Layer.provideMerge(Cloudflare.providers()))
+      : Cloudflare.providers(),
     state: Cloudflare.state(),
     secrets: [Secrets.DotEnv(), Secrets.ProcessEnv(), WriterSecrets],
   },
   Effect.gen(function* () {
     const worker = yield* Worker.Worker;
-    const observability = yield* Observability;
     return {
       url: worker.url,
       workerName: worker.workerName,
-      dashboard: observability.dashboard.uid,
+      ...(TASK_CACHE_TELEMETRY_ENABLED ? { dashboard: (yield* Observability).dashboard.uid } : {}),
     };
   }).pipe(Effect.provide(Worker.layer), adopt(true)),
 );

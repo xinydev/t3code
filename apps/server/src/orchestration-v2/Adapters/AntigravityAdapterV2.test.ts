@@ -45,6 +45,7 @@ import { makeAcpAdapterV2 } from "@t3tools/provider-acp/server/adapter";
 import { makeAntigravityAcpRuntime } from "../../provider/acp/AntigravityAcpSupport.ts";
 import { normalizeAntigravitySessionUpdate } from "../../provider/acp/AntigravityProtocol.ts";
 import { ANTIGRAVITY_SIGN_IN_REQUIRED_MESSAGE } from "../../provider/antigravityAuthSupport.ts";
+import { t3ProviderIntegrationsEnabled } from "../../provider/t3ProviderIntegrations.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 import { makeTurnInput } from "./AcpAdapterV2.testkit.ts";
@@ -2865,9 +2866,9 @@ describe("AntigravityAdapterV2 runtime mode ceiling", () => {
 });
 
 describe("AntigravityAdapterV2 session system prompt", () => {
-  it.effect.each(["1.5.0"])(
-    "carries PR linking once per turn on %s, which does not advertise a system prompt append",
-    (agentVersion) =>
+  it.effect.each([true, false])(
+    "adds Antigravity instructions when T3 integrations are enabled (%s)",
+    (enabled) =>
       Effect.gen(function* () {
         const childProcessSpawner = yield* ChildProcessSpawner.ChildProcessSpawner;
         const fileSystem = yield* FileSystem.FileSystem;
@@ -2884,8 +2885,9 @@ describe("AntigravityAdapterV2 session system prompt", () => {
         const adapter = yield* makeAntigravityAdapterV2({
           instanceId,
           selfInvocation: yield* resolveSelfInvocation(),
-          makeRuntime: (input) =>
-            makeAntigravityAcpRuntime({
+          makeRuntime: (input) => {
+            if (!enabled) assert.isUndefined(input.sessionSystemPromptAppend);
+            return makeAntigravityAcpRuntime({
               ...input,
               childProcessSpawner,
               spawn: {
@@ -2894,7 +2896,7 @@ describe("AntigravityAdapterV2 session system prompt", () => {
                 cwd: input.cwd,
                 env: {
                   T3_ACP_ANTIGRAVITY: "1",
-                  T3_ACP_AGENT_VERSION: agentVersion,
+                  T3_ACP_AGENT_VERSION: "1.5.0",
                   T3_ACP_REQUEST_LOG_PATH: requestLog,
                   T3_ACP_HANG_PROMPT_FOREVER: "1",
                 },
@@ -2908,10 +2910,15 @@ describe("AntigravityAdapterV2 session system prompt", () => {
                     Effect.andThen(runtime.prompt(request)),
                   ),
               })),
-            ),
+            );
+          },
           withProcess: (_stop, task) => task,
           defaultModel: Effect.undefined,
-        });
+        }).pipe(
+          Effect.updateService(ProviderHost.ProviderHost, (host) =>
+            enabled ? host : { ...host, t3ProviderIntegrationsEnabled },
+          ),
+        );
         const workspace = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-ag-sp-" });
         const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
           runtimeMode: "full-access",
@@ -2982,10 +2989,13 @@ describe("AntigravityAdapterV2 session system prompt", () => {
           .map((line) => JSON.parse(line) as { method?: string; params?: { _meta?: unknown } })
           .find((request) => request.method === "session/new");
         const append = JSON.stringify(sessionNew?.params?._meta ?? null);
-        // Identity stays per turn either way.
-        assert.include(sent, "through the Antigravity harness, as gemini-test-low");
         assert.notInclude(append, "systemPrompt");
-        assert.include(sent, "<pull_request_linking>");
+        if (enabled) {
+          assert.include(sent, "through the Antigravity harness, as gemini-test-low");
+          assert.include(sent, "<pull_request_linking>");
+        } else {
+          assert.deepEqual(JSON.parse(sent), [{ type: "text", text: "open a PR" }]);
+        }
       }).pipe(Effect.provide(layerSession)),
   );
 });

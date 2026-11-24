@@ -1652,7 +1652,8 @@ const CHAT_MARKDOWN_COMPONENTS = {
       fileLinkChip,
       resolvedTheme,
     } = use(ChatMarkdownRendererContext);
-    const imageExpand = use(MarkdownLinkContext) ? undefined : expandMedia;
+    const nestedInLink = use(MarkdownLinkContext);
+    const imageExpand = nestedInLink ? undefined : expandMedia;
     const contextReference = typeof src === "string" ? parseComposerContextHref(src) : null;
     if (contextReference) {
       const label = alt || contextReference.contextId;
@@ -1669,9 +1670,20 @@ const CHAT_MARKDOWN_COMPONENTS = {
     const authoredTitle = typeof markdownTitle === "string" ? markdownTitle : title;
     const altText = alt ?? "";
     const copyMarkdown = markdownImageCopy(altText, srcString, authoredTitle);
-    const { className, style: _style, width, height, ...imageProps } = props;
+    const { className, style: _style, srcSet: _srcSet, width, height, ...imageProps } = props;
     const authoredSizeStyle = authoredImageSizeStyle(width, height);
     const imageSource = classifyMarkdownImageSource(classifiedSrc, imageBaseDir ?? cwd);
+    if (imageSource._tag === "Direct" && resolveExternalWebLinkHost(imageSource.uri) !== null) {
+      const href = resolveProtocolRelativeMediaUrl(imageSource.uri);
+      const label = altText || href;
+      return nestedInLink ? (
+        <span data-markdown-copy={copyMarkdown}>{label}</span>
+      ) : (
+        <a href={href} target="_blank" rel="noreferrer" data-markdown-copy={copyMarkdown}>
+          {label}
+        </a>
+      );
+    }
     const mediaKind = mediaKindFromPath(classifiedSrc);
     if (mediaKind === "audio") {
       const filePath = imageSource._tag === "WorkspaceFile" ? imageSource.path : null;

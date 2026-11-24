@@ -5,9 +5,9 @@ import { defaultInclude, defineConfig } from "vite-plus";
 import { Rolldown } from "vite-plus/pack";
 
 import { isDesktopRuntimeExternalDependency } from "../../scripts/lib/desktop-external-packages.ts";
-import { loadRepoEnv } from "../../scripts/lib/public-config.ts";
+import { loadLocalRepoEnv } from "../../scripts/lib/public-config.ts";
 
-const repoEnv = loadRepoEnv();
+const repoEnv = loadLocalRepoEnv();
 const domTests = ["src/preview/PickPreload.test.ts"];
 
 // Install only bundle externals; the server bundle already carries its dependency tree.
